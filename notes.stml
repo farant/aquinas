@@ -1,0 +1,400 @@
+<files>
+	<file nid (>boot.asm
+	<file nid (>kernel.c
+	<file nid (>kernel_entry.asm
+	<file nid (>Makefile
+	<file nid (>linker.ld
+</files>
+
+<x86-assembly-commands>
+	<command ((>
+		add
+		<description (>
+			The ADD instruction performs arithmetic addition between two 
+			operands, storing the result in the destination operand. It adds the 
+			source value to the destination value and updates processor flags 
+			based on the result, including the carry flag (CF) for unsigned 
+			overflow, overflow flag (OF) for signed overflow, and zero flag (ZF)
+			if the result is zero.
+
+	<command ((>
+		call
+		<description (>
+			The CALL instruction implements a subroutine call by pushing the 
+			address of the next instruction onto the stack (as a return address)
+			and then jumping to the specified target address. This allows the 
+			called subroutine to later return to the correct location using a 
+			RET instruction.
+
+	<command ((>
+		cmp
+		<description (>
+			The CMP (compare) instruction performs a subtraction between two
+			operands but only updates the processor flags without storing the 
+			result anywhere. It's essentially computing destination minus 
+			source and setting flags like ZF (if values are equal), CF (for
+			unsigned comparison), and SF (sign flag) which can then be used 
+			by conditional jump instructions.
+
+	<command ((>
+		cpuid
+		<description (>
+			The CPUID instruction is a specialized x86 instruction that returns 
+			processor identification and feature information based on the value 
+			in the EAX register. It's the standard way to query what features a 
+			CPU supports, returning values in EAX, EBX, ECX, and EDX registers.
+
+	<command ((>
+		in
+		<description (>
+			The IN instruction reads data from an I/O port specified by the 
+			source operand into the AL, AX, or EAX register. I/O ports are a
+			separate address space from memory on x86 systems, used to
+			communicate with hardware devices.
+
+	<command ((>
+		int
+		<description (>
+			The INT (interrupt) instruction triggers a software interrupt by
+			calling the interrupt handler for the specified interrupt number
+			through the interrupt vector table. In real mode, this is the 
+			primary way to call BIOS services and operating system functions.
+
+	<command ((>
+		jb
+		<description (>
+			The JB (jump if below) instruction performs a conditional jump if 
+			the carry flag (CF) is set, which indicates an unsigned "below"
+			comparison result from a previous CMP instruction. It's used for
+			unsigned number comparisons where you want to branch if the first 
+			operand was less than the second.
+
+	<command ((>
+		jc
+		<description (>
+			The JC (jump if carry) instruction performs a conditional jump if 
+			the carry flag (CF) is set, typically indicating an error or 
+			overflow condition from a previous operation. Many BIOS services 
+			set the carry flag to indicate an error occurred.
+
+	<command ((>
+		jmp
+		<description (>
+			The JMP instruction performs an unconditional jump to a specified 
+			address, transferring control to a different part of the program 
+			without saving a return address. It can perform short, near, or 
+			far jumps depending on the target distance and segment.
+
+	<command ((>
+		jz
+		<description (>
+			The JZ (jump if zero) instruction performs a conditional jump if 
+			the zero flag (ZF) is set, typically meaning the result of the last 
+			arithmetic or logic operation was zero, or two compared values were
+			equal. It's one of the most commonly used conditional jumps.
+
+	<command ((>
+		lgdt
+		<description (>
+			The LGDT (load global descriptor table) instruction loads the Global 
+			Descriptor Table register (GDTR) with a pointer to the GDT structure 
+			in memory. The GDT defines memory segments and their permissions in
+			protected mode and long mode, making this instruction crucial for 
+			mode transitions.
+
+	<command ((>
+		lodsb
+		<description (>
+			The LODSB (load string byte) instruction loads a byte from the
+			memory address pointed to by DS:SI (in 16-bit mode) or RSI (in 
+			64-bit mode) into the AL register, then automatically increments 
+			SI/RSI to point to the next byte. It's designed for efficient 
+			string processing in loops.
+
+	<command ((>
+		loop
+		<description (>
+			The LOOP instruction decrements the ECX/CX counter register and 
+			jumps to the specified label if the counter is not zero, providing
+			a simple way to implement counted loops. It combines decrement and 
+			conditional jump in a single, compact instruction.
+
+	<command ((>
+		mov
+		<description (>
+			The MOV instruction copies data from a source operand to a
+			destination operand without affecting flags, and is by far the most 
+			common instruction in x86 assembly. It can transfer data between 
+			registers, between memory and registers, or load immediate values,
+			but cannot move directly from memory to memory.
+
+	<command ((>
+		or
+		<description (>
+			The OR instruction performs a bitwise logical OR operation between
+			two operands, setting each bit in the result to 1 if either
+			corresponding source bit is 1, and stores the result in the
+			destination. It updates flags including ZF (set if result is zero)
+			and clears CF and OF.
+
+	<command ((>
+		out
+		<description (>
+			The OUT instruction writes data from the AL, AX, or EAX register 
+			to an I/O port specified by the destination operand, complementing 
+			the IN instruction for hardware communication. Like IN, it accesses 
+			the separate I/O address space used for hardware device control.
+
+	<command ((>
+		rdmsr
+		<description (>
+			The RDMSR (read model-specific register) instruction reads a 64-bit
+			value from a Model-Specific Register specified by the ECX register
+			into EDX:EAX (high 32 bits in EDX, low 32 bits in EAX). MSRs are
+			special CPU configuration registers that control 
+			processor-specific features.
+
+	<command ((>
+		ret
+		<description (>
+			The RET (return) instruction returns from a subroutine by popping 
+			the return address from the stack into the instruction pointer,
+			resuming execution at the instruction following the original CALL.
+			It's the standard way to exit from a called procedure.
+
+	<command ((>
+		stosd
+		<description (>
+			The STOSD (store string doubleword) instruction stores the EAX
+			register value to the memory location pointed to by ES:EDI (or 
+			RDI in 64-bit mode) and then automatically increments EDI by 4 
+			to point to the next doubleword. When combined with the REP 
+			prefix, it provides a fast way to fill memory with a repeated value.
+
+	<command ((>
+		test
+		<description (>
+			The TEST instruction performs a bitwise AND operation between 
+			two operands and updates the flags based on the result, but 
+			unlike AND, it doesn't store the result anywhere. It's primarily
+			used to check if specific bits are set without modifying any data.
+
+	<command ((>
+		wrmsr
+		<description (>
+			The WRMSR (write model-specific register) instruction writes a 
+			64-bit value from EDX:EAX to a Model-Specific Register specified 
+			by ECX, allowing configuration of processor-specific features. 
+			It's the counterpart to RDMSR for modifying MSR values.
+
+	<command ((>
+		xor
+		<description (>
+			The XOR (exclusive OR) instruction performs a bitwise exclusive OR
+			operation where each result bit is 1 if the corresponding source 
+			bits differ, and 0 if they're the same. A common idiom is XORing a
+			register with itself to zero it, which is more efficient than
+			loading zero.
+
+	<register (>RAX
+	<register (>EAX
+	<register (>AX
+	<register (>AH
+	<register (>AL
+
+	<register (>RSP
+	<register (>ESP
+	<register (>SP
+
+	<register (>
+		CS
+		<description (>Code Segment - where instructions are fetched from
+
+	<register (>
+		DS
+		<description (>Data Segment - default for data access
+
+	<register (>
+		SS
+		<description (>Stack Segment - where stack operations occur
+
+	<register (>
+		ES
+		<description (>Extra Segment - additional data segment
+
+	<register (>
+		FS
+		<description (>Additional segment (386+)
+
+	<register (>
+		GS
+		<description (>Additional segment (386+)
+
+
+	<instruction-prefix (>rep
+
+	<directive ((>
+		BITS
+		<description (>
+			Tells the assembler what processor mode the CPU will be in so
+			it generates the right kind of machine code. i.e 16, 32 or 64.
+
+	<directive ((>
+		ORG
+		<description (>
+			ORG is for "origin", it sets the starting address for all 
+			label calculations.
+
+	<magic-address (>
+		0x7C00
+		<description (>
+			BIOS reads the first 512 bytes from disk, loads them to memory
+			address 0x7C00 and jumps to address 0x7C00 to start execution.
+
+</x86-assembly-commands>
+
+<x86-assembly-syntax>
+	<syntax ((>
+		<example!>; hello</example>
+		This is a comment
+	<syntax ((>
+		<example!>[BITS 16]</example>
+		This is an assembler directive
+</x86-assembly-syntax>
+
+<x86-assembly-glossary>
+
+	<term ((>
+		label
+		<definition ((>
+			Somewhere you can jump to in assembly, looks like this:
+			<example!>start:</example>
+
+	<term ((>
+		local label
+		<definition ((>
+			A label that is private to a parent label, only accessible
+			within parent label. Name starts with a .
+			<example!>.done:</example>
+
+	<term ((>
+		NASM
+		<definition (>Netwide Assembler
+
+	<term ((>
+		Real mode
+		<definition (>16-bit mode
+
+	<term ((>
+		Protected mode
+		<definition (>32-bit mode
+
+	<term ((>
+		Long mode
+		<definition (>64-bit mode
+
+	<term ((>
+		Assembly instruction
+		<definition>
+			Something like <example!>xor ax, ax</example>. In this case
+			xor is the <term>mnemonic</term>, the first ax is the
+			<term>destination operand</term>, and the second ax is the
+			<term>source operand</term>.
+		</definition>
+
+	<term ((>
+		Processor flag
+		<definition (>
+			A processor flag is a single bit in a special CPU register (called 
+			the FLAGS, EFLAGS, or RFLAGS register on x86) that indicates the 
+			status or result of the last operation. Think of flags as little yes/
+			no indicators that the CPU automatically sets after most 
+			instructions.
+
+	<term ((>
+		Zero Flag (ZF)
+		<definition (>Set to 1 if the result was zero, 0 otherwise
+
+	<term ((>
+		Carry Flag (CF)
+		<definition (>
+			Set to 1 if an unsigned operation overflowed or borrowed
+
+	<term ((>
+		Sign Flag (SF)
+		<definition (>Set to 1 if the result was negative (highest bit = 1)
+
+	<term ((>
+		Overflow Flag (OF)
+		<definition (>Set to 1 if a signed operation overflowed
+		
+	<term ((>
+		Parity Flag (PF)
+		<definition (>
+			Set to 1 if the low byte of the result has an even number of 
+			1 bits. It's mostly a legacy feature from early computing when 
+			parity was used for error detection in data transmission.
+
+	<term ((>
+		Auxiliary Carry Flag (AF)
+		<definition (>
+			Set to 1 if there's a carry/borrow from bit 3 to bit 4 (the low
+			nibble to high nibble). This is mainly used for Binary Coded 
+			Decimal (BCD) arithmetic operations.
+
+	<term ((>
+		Trap Flag (TF)
+		<definition (>
+			When set to 1, the CPU enters single-step mode - it generates a
+			debug exception after executing each instruction. This is primarily
+			used by debuggers to step through code one instruction at a time.
+
+	<term ((>
+		Interrupt Enable Flag (IF)
+		<definition (>
+			Controls whether the CPU responds to maskable hardware interrupts.
+			When IF=0, the CPU ignores interrupt requests (except non-maskable 
+			interrupts).
+
+	<term ((>
+		Direction Flag (DF)
+		<definition (>
+			Controls the direction for string operations. When DF=0, string
+			pointers increment (forward). When DF=1, they decrement (backward).
+
+
+	<term ((>
+		segment
+		<definition (>
+			A segment is a section or region of memory. In x86 architecture,
+			segments are a way to divide and access memory, though how they 
+			work varies dramatically between processor modes.
+
+	<term ((>
+		BIOS interrupt
+		<definition (>
+			BIOS interrupts only work in real mode (16-bit mode)
+
+</x86-assembly-glossary>
+
+
+<complications>
+	<#day-1>
+		<complication nid (>
+			I'm on macOS so my makefile need to use the x86_64-elf.. gcc and ld
+		<complication nid (>
+			C89 does not support inline keyword, that's a C99 thing
+		<complication nid (> 
+			It builds and QEMU runs it but it doesn't do anything! Claude says
+			the bootloader is only loading 17 sectors but our kernel might
+			be longer.
+		<complication nid>
+			For some reason the Makefile that is trying to interpolate 
+			<shell!>wc -c < boot.bin</shell> is not working even though
+			the command seems to work on the shell.
+		</complication>
+		<complication nid (>
+			Claude appears to be unable to update a Makefile to use $$ instead
+			of $ even though it knows it should.
+	<#>
+</complications>
