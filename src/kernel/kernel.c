@@ -414,35 +414,43 @@ void poll_mouse(void) {
                 buf_pos++;
             }
             
-            /* Find word boundaries */
+            /* Find word boundaries or clear highlight */
             if (buf_pos < buffer_length) {
-                /* Find start of word */
-                highlight_start = buf_pos;
-                while (highlight_start > 0 && 
-                       text_buffer[highlight_start - 1] != ' ' &&
-                       text_buffer[highlight_start - 1] != '\n' &&
-                       text_buffer[highlight_start - 1] != '\t') {
-                    highlight_start--;
-                }
-                
-                /* Find end of word */
-                highlight_end = buf_pos;
-                while (highlight_end < buffer_length &&
-                       text_buffer[highlight_end] != ' ' &&
-                       text_buffer[highlight_end] != '\n' &&
-                       text_buffer[highlight_end] != '\t') {
-                    highlight_end++;
-                }
-                
-                /* If clicked on whitespace, clear highlight */
-                if (highlight_start == highlight_end) {
+                /* Check if clicked on whitespace or empty area */
+                if (text_buffer[buf_pos] == ' ' || 
+                    text_buffer[buf_pos] == '\n' || 
+                    text_buffer[buf_pos] == '\t') {
+                    /* Clicked on whitespace - clear any existing highlight */
                     highlight_start = -1;
                     highlight_end = -1;
+                } else {
+                    /* Clicked on a character - find word boundaries */
+                    /* Find start of word */
+                    highlight_start = buf_pos;
+                    while (highlight_start > 0 && 
+                           text_buffer[highlight_start - 1] != ' ' &&
+                           text_buffer[highlight_start - 1] != '\n' &&
+                           text_buffer[highlight_start - 1] != '\t') {
+                        highlight_start--;
+                    }
+                    
+                    /* Find end of word */
+                    highlight_end = buf_pos;
+                    while (highlight_end < buffer_length &&
+                           text_buffer[highlight_end] != ' ' &&
+                           text_buffer[highlight_end] != '\n' &&
+                           text_buffer[highlight_end] != '\t') {
+                        highlight_end++;
+                    }
                 }
-                
-                /* Refresh to show highlight change */
-                refresh_screen();
+            } else {
+                /* Clicked beyond text - clear highlight */
+                highlight_start = -1;
+                highlight_end = -1;
             }
+            
+            /* Always refresh to show highlight change */
+            refresh_screen();
         }
         
         /* Only update mouse position if button is NOT held down */
