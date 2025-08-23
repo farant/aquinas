@@ -30,12 +30,10 @@
 
 #include "io.h"
 #include "serial.h"
+#include "vga.h"
 
-#define VGA_BUFFER ((unsigned short*)0xB8000)
-#define VGA_WIDTH 80
-#define VGA_HEIGHT 25
-#define VGA_COLOR 0x1F00  /* Blue background, white text */
-#define BUFFER_SIZE (VGA_WIDTH * VGA_HEIGHT * 4)  /* 4 screens worth */
+/* Page size is one screen minus the navigation bar */
+#define PAGE_SIZE ((VGA_HEIGHT - 1) * VGA_WIDTH)
 
 /* Page structure - each page has its own buffer and cursor */
 typedef struct {
@@ -93,12 +91,12 @@ void next_page(void) {
 void draw_nav_bar(void) {
     /* Fill top line with white background (inverse colors) */
     for (int i = 0; i < VGA_WIDTH; i++) {
-        unsigned short color = 0x7000;  /* Gray background, black text */
+        unsigned short color = VGA_COLOR_NAV_BAR;  /* Gray background, black text */
         /* Check if mouse is on this position */
         if (mouse_visible && mouse_y == 0 && mouse_x == i) {
-            color = 0x2F00;  /* Green background for mouse cursor */
+            color = VGA_COLOR_MOUSE;  /* Green background for mouse cursor */
         }
-        VGA_BUFFER[i] = color | ' ';
+        vga_write_char(i, ' ', color);
     }
     
     /* Format page info string */
@@ -163,9 +161,9 @@ void draw_nav_bar(void) {
         unsigned short color = 0x7000;  /* Gray background */
         /* Check if mouse is on this position */
         if (mouse_visible && mouse_y == 0 && mouse_x == start_pos + i) {
-            color = 0x2F00;  /* Green background for mouse cursor */
+            color = VGA_COLOR_MOUSE;  /* Green background for mouse cursor */
         }
-        VGA_BUFFER[start_pos + i] = color | page_info[i];
+        vga_write_char(start_pos + i, page_info[i], color);
     }
 }
 
@@ -195,22 +193,15 @@ void update_cursor(void) {
         buf_pos++;
     }
     
-    if (screen_pos >= 0 && screen_pos < VGA_WIDTH * VGA_HEIGHT) {
-        /* Tell VGA board we're setting the high cursor byte */
-        outb(0x3D4, 0x0E);
-        outb(0x3D5, (unsigned char)((screen_pos >> 8) & 0xFF));
-        
-        /* Tell VGA board we're setting the low cursor byte */
-        outb(0x3D4, 0x0F);
-        outb(0x3D5, (unsigned char)(screen_pos & 0xFF));
-    }
+    /* Use VGA module to set cursor position */
+    vga_set_cursor(screen_pos);
 }
 
 /* Redraw the screen from the buffer */
 void refresh_screen(void) {
     /* Clear only the text area (not nav bar) to prevent flickering */
     for (int i = VGA_WIDTH; i < VGA_WIDTH * VGA_HEIGHT; i++) {
-        VGA_BUFFER[i] = VGA_COLOR | ' ';
+        vga_write_char(i, ' ', VGA_COLOR);
     }
     
     /* Always redraw navigation bar to update mouse cursor */
@@ -228,14 +219,14 @@ void refresh_screen(void) {
         
         /* Check if this is the mouse position */
         if (mouse_visible && screen_pos == (mouse_y * VGA_WIDTH + mouse_x)) {
-            color = 0x2F00;  /* Green background for mouse cursor */
+            color = VGA_COLOR_MOUSE;  /* Green background for mouse cursor */
         }
         
         /* Check if this position is highlighted (using per-page highlight) */
         if (page->highlight_end > 0 && page->highlight_end <= page->length &&
             page->highlight_start >= 0 && page->highlight_start < page->highlight_end &&
             buf_pos >= page->highlight_start && buf_pos < page->highlight_end) {
-            color = 0x4F00;  /* Red background for highlighted text */
+            color = VGA_COLOR_HIGHLIGHT;  /* Red background for highlighted text */
         }
         
         char c = page->buffer[buf_pos];
@@ -245,9 +236,9 @@ void refresh_screen(void) {
             while (col < VGA_WIDTH && screen_pos < VGA_WIDTH * VGA_HEIGHT) {
                 /* Check mouse position for each space */
                 if (mouse_visible && screen_pos == (mouse_y * VGA_WIDTH + mouse_x)) {
-                    VGA_BUFFER[screen_pos++] = 0x2F00 | ' ';
+                    vga_write_char(screen_pos++, ' ', VGA_COLOR_MOUSE);
                 } else {
-                    VGA_BUFFER[screen_pos++] = VGA_COLOR | ' ';
+                    vga_write_char(screen_pos++, ' ', VGA_COLOR);
                 }
                 col++;
             }
@@ -259,12 +250,12 @@ void refresh_screen(void) {
                 if (mouse_visible && screen_pos == (mouse_y * VGA_WIDTH + mouse_x)) {
                     tab_color = 0x2F00;
                 }
-                VGA_BUFFER[screen_pos++] = tab_color | ' ';
+                vga_write_char(screen_pos++, ' ', tab_color);
             }
             buf_pos++;
         } else {
             /* Regular character */
-            VGA_BUFFER[screen_pos++] = color | c;
+            vga_write_char(screen_pos++, c, color);
             buf_pos++;
         }
     }
@@ -272,9 +263,9 @@ void refresh_screen(void) {
     /* Fill remaining screen with spaces */
     while (screen_pos < VGA_WIDTH * VGA_HEIGHT) {
         if (mouse_visible && screen_pos == (mouse_y * VGA_WIDTH + mouse_x)) {
-            VGA_BUFFER[screen_pos++] = 0x2F00 | ' ';
+            vga_write_char(screen_pos++, ' ', VGA_COLOR_MOUSE);
         } else {
-            VGA_BUFFER[screen_pos++] = VGA_COLOR | ' ';
+            vga_write_char(screen_pos++, ' ', VGA_COLOR);
         }
     }
     update_cursor();
@@ -360,9 +351,9 @@ void delete_char(void) {
 }
 
 void clear_screen(void) {
-    for (int i = 0; i < VGA_WIDTH * VGA_HEIGHT; i++) {
-        VGA_BUFFER[i] = VGA_COLOR | ' ';
-    }
+    /* Use VGA module to clear screen */
+    vga_clear_screen();
+    
     /* Clear current page */
     Page *page = &pages[current_page];
     page->cursor_pos = 0;
