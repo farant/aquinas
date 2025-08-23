@@ -76,10 +76,52 @@ Remember: Comments are for communicating with future readers (including yourself
 - `make run-debug` - Run with only debug output (no mouse support)
 - `make clean` - Clean build files
 
+### Debug Targets (for troubleshooting crashes)
+- `make debug` - Basic debugging with interrupt/exception tracking
+  - Shows all interrupts and exceptions
+  - Halts on triple fault instead of rebooting
+  - Shows guest OS errors
+  
+- `make debug-cpu` - Includes CPU register dumps
+  - Everything from `debug` plus
+  - Full CPU state at each exception
+  - Useful for debugging protection faults
+  
+- `make debug-trace` - Includes instruction disassembly
+  - Everything from `debug` plus
+  - Shows disassembled instructions as they execute
+  - WARNING: Verbose output
+  
+- `make debug-all` - Maximum verbosity
+  - Everything from `debug-cpu` plus
+  - Full execution trace
+  - WARNING: Extremely verbose - generates massive logs
+
 ### Running in Background
 **For Claude Code**: When using the Bash tool with `run_in_background: true`, the process runs in background and output can be monitored with the BashOutput tool. This is preferred for Claude Code as it allows better control and monitoring of the process. Can use this with `make run`.
 
 **To stop QEMU**: Use `pkill -f qemu-system-x86_64`
+
+### Understanding Debug Output
+
+When using debug targets, look for:
+
+**Triple Faults:**
+- Exception (e.g., #GP, #PF) → Double Fault (#DF) → Triple Fault → CPU Reset
+- With `-no-reboot`, QEMU will halt showing the last state
+
+**Common Exception Codes:**
+- `check_exception old: 0xffffffff new 0xd` - General Protection Fault (#GP)
+- `check_exception old: 0xffffffff new 0xe` - Page Fault (#PF)
+- `check_exception old: 0xffffffff new 0x6` - Invalid Opcode (#UD)
+- `check_exception old: 0xd new 0x8` - Double Fault (GPF led to DF)
+
+**CPU State Fields:**
+- `EIP` - Instruction pointer (where crash occurred)
+- `ESP` - Stack pointer
+- `CR0` - Control register (check protection enable bit)
+- `CR2` - Page fault linear address
+- `CR3` - Page directory base (if paging enabled)
 
 ## Debugging
 

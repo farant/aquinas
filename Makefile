@@ -70,9 +70,21 @@ run: $(OS_IMG)
 run-debug: $(OS_IMG)
 	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M -serial stdio
 
-# Debug mode
+# Debug mode - shows interrupts and CPU resets, halts on triple fault
 debug: $(OS_IMG)
-	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M -d int,cpu_reset -no-reboot
+	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M -no-reboot -no-shutdown -d int,cpu_reset,guest_errors
+
+# Debug with CPU state - also shows CPU register dumps
+debug-cpu: $(OS_IMG)
+	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M -no-reboot -no-shutdown -d int,cpu_reset,cpu,guest_errors
+
+# Debug with instruction trace - WARNING: Very verbose!
+debug-trace: $(OS_IMG)
+	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M -no-reboot -no-shutdown -d int,cpu_reset,in_asm,guest_errors
+
+# Debug everything - WARNING: Extremely verbose!
+debug-all: $(OS_IMG)
+	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M -no-reboot -no-shutdown -d int,cpu_reset,cpu,exec,in_asm,guest_errors
 
 # Clean build files
 clean:
@@ -82,4 +94,4 @@ clean:
 distclean: clean
 	rm -f *~ *.swp .DS_Store
 
-.PHONY: all run debug clean distclean
+.PHONY: all run run-debug debug debug-cpu debug-trace debug-all clean distclean
