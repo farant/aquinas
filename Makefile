@@ -19,12 +19,12 @@ LDFLAGS = -m elf_i386 -T $(SRC_DIR)/linker.ld -nostdlib
 # Source files
 BOOT_SRC = $(BOOT_DIR)/boot.asm
 KERNEL_ENTRY_SRC = $(KERNEL_DIR)/kernel_entry.asm
-KERNEL_C_SRC = $(KERNEL_DIR)/kernel.c
+KERNEL_C_SRCS = $(KERNEL_DIR)/kernel.c
 
 # Build files
 BOOT_BIN = $(BUILD_DIR)/boot.bin
 KERNEL_ENTRY_OBJ = $(BUILD_DIR)/kernel_entry.o
-KERNEL_C_OBJ = $(BUILD_DIR)/kernel.o
+KERNEL_C_OBJS = $(BUILD_DIR)/kernel.o
 KERNEL_BIN = $(BUILD_DIR)/kernel.bin
 OS_IMG = $(BUILD_DIR)/aquinas.img
 
@@ -43,12 +43,12 @@ $(BOOT_BIN): $(BOOT_SRC)
 $(KERNEL_ENTRY_OBJ): $(KERNEL_ENTRY_SRC)
 	$(AS) -f elf32 $< -o $@
 
-# Build kernel C code
-$(KERNEL_C_OBJ): $(KERNEL_C_SRC)
-	$(CC) $(CFLAGS) -c $< -o $@
+# Build kernel C files
+$(BUILD_DIR)/%.o: $(KERNEL_DIR)/%.c
+	$(CC) $(CFLAGS) -I$(KERNEL_DIR) -c $< -o $@
 
 # Link kernel
-$(KERNEL_BIN): $(KERNEL_ENTRY_OBJ) $(KERNEL_C_OBJ)
+$(KERNEL_BIN): $(KERNEL_ENTRY_OBJ) $(KERNEL_C_OBJS)
 	$(LD) $(LDFLAGS) $^ -o $@
 
 # Create OS image
@@ -64,7 +64,7 @@ $(OS_IMG): $(BOOT_BIN) $(KERNEL_BIN)
 
 # Run the OS
 run: $(OS_IMG)
-	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy, -display cocoa,zoom-to-fit=on -m 128M -full-screen
+	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M -display cocoa,zoom-to-fit=on -full-screen
 
 # Debug mode
 debug: $(OS_IMG)
