@@ -1,25 +1,33 @@
 # Aquinas OS
 
-A simple 32-bit protected mode operating system written in assembly and C.
+A minimalist text editor operating system - boots directly into a multi-page text editor with mouse support.
+
+Inspired by Acme, event sourcing, XML, object database filesystems, and graph databases.
 
 ## Project Structure
 
 ```
 aquinas/
-├── src/                    # Source code
-│   ├── boot/              # Bootloader
-│   │   └── boot.asm       # Boot sector (loads kernel, switches to protected mode)
-│   ├── kernel/            # Kernel code  
-│   │   ├── kernel_entry.asm  # Assembly entry point
-│   │   └── kernel.c          # Main kernel code
-│   └── linker.ld          # Linker script
-├── build/                 # Build outputs (gitignored)
-│   ├── *.o               # Object files
-│   ├── *.bin             # Binary files
-│   └── aquinas.img       # Final bootable image
-├── Makefile              # Build system
-├── README.md             # This file
-└── .gitignore           # Git ignore rules
+├── src/                      # Source code
+│   ├── boot/                # Bootloader
+│   │   └── boot.asm         # Boot sector (loads kernel, switches to protected mode)
+│   ├── kernel/              # Kernel code  
+│   │   ├── kernel_entry.asm # Assembly entry point
+│   │   ├── kernel.c         # Main kernel code
+│   │   ├── serial.c         # Serial port communication (mouse & debug)
+│   │   ├── serial.h         # Serial port definitions
+│   │   ├── io.h             # Port I/O functions
+│   │   ├── vga.h            # VGA text mode definitions
+│   │   └── mouse.h          # Mouse protocol definitions
+│   └── linker.ld            # Linker script
+├── build/                   # Build outputs (gitignored)
+│   ├── *.o                  # Object files
+│   ├── *.bin                # Binary files
+│   └── aquinas.img          # Final bootable image
+├── Makefile                 # Build system
+├── README.md                # This file
+├── CLAUDE.md                # Development guidelines & instructions
+└── notes.stml               # Development notes
 ```
 
 ## Building
