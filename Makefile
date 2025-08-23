@@ -64,7 +64,7 @@ $(OS_IMG): $(BOOT_BIN) $(KERNEL_BIN)
 
 # Run the OS
 run: $(OS_IMG)
-	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M
+	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy, -display cocoa,zoom-to-fit=on -m 128M -full-screen
 
 # Debug mode
 debug: $(OS_IMG)
