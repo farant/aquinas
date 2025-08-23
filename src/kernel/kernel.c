@@ -1,4 +1,32 @@
-/* AquinasOS Text Editor */
+/* AquinasOS Text Editor 
+ *
+ * DESIGN
+ * ------
+ * 
+ * This is a page-based text editor that runs as an operating system kernel.
+ * The design emphasizes simplicity and independence between pages.
+ * 
+ * Architecture:
+ * - Each page is completely independent with its own buffer and cursor
+ * - Pages don't overflow into each other (no continuous buffer)
+ * - Maximum of 100 pages, each holding one screen worth of text (24 lines)
+ * - Navigation is done through a clickable navigation bar or keyboard shortcuts
+ * 
+ * Input handling:
+ * - Non-blocking keyboard and mouse polling (no interrupts)
+ * - Microsoft Serial Mouse protocol via COM1 (3-byte packets)
+ * - Simultaneous mouse and keyboard input processing
+ * 
+ * Visual features:
+ * - VGA text mode (80x25) with blue background
+ * - Hardware cursor for text insertion point
+ * - Green background for mouse cursor position
+ * - Red background for highlighted text (click to select words)
+ * - Auto-indentation when pressing Enter
+ * 
+ * The simplicity is intentional - this allows the editor to be reliable
+ * and easy to understand, while still providing essential editing features.
+ */
 
 #include "io.h"
 #include "serial.h"
@@ -256,7 +284,10 @@ void refresh_screen(void) {
 void insert_char(char c) {
     Page *page = &pages[current_page];
     
-    /* Check if page is full */
+    /* Check if page is full.
+     * Why PAGE_SIZE - 1: We reserve one byte as a safety margin to prevent
+     * buffer overflows during operations like auto-indentation which may
+     * insert multiple characters. */
     if (page->length >= PAGE_SIZE - 1) return;
     
     /* If inserting newline, handle auto-indentation */
@@ -447,7 +478,38 @@ void move_cursor_down(void) {
 /* Old blocking keyboard handler - kept for reference but not used */
 /* keyboard_get_scancode was replaced by non-blocking keyboard_check */
 
-/* Poll for serial mouse data (non-blocking) */
+/* Poll for serial mouse data (non-blocking)
+ *
+ * MICROSOFT SERIAL MOUSE PROTOCOL
+ * --------------------------------
+ * 
+ * Serial mice communicate using 3-byte packets at 1200 baud, 7N1.
+ * The protocol was designed to be self-synchronizing - you can start
+ * reading at any point and quickly identify packet boundaries.
+ * 
+ * Packet format:
+ *   Byte 0: 01LR YYyy XXxx
+ *           - Bit 6 is always 1 (identifies first byte)
+ *           - Bit 5 (L) = left button state
+ *           - Bit 4 (R) = right button state  
+ *           - Bits 3-2 (YY) = Y movement high bits
+ *           - Bits 1-0 (XX) = X movement high bits
+ * 
+ *   Byte 1: 00XX XXXX
+ *           - Bit 6 is always 0 (not a first byte)
+ *           - Bits 5-0 = X movement low 6 bits
+ * 
+ *   Byte 2: 00YY YYYY
+ *           - Bit 6 is always 0 (not a first byte)
+ *           - Bits 5-0 = Y movement low 6 bits
+ * 
+ * Movement values are 8-bit signed integers (-128 to +127).
+ * Positive X = right, Positive Y = down (in mouse coordinates).
+ * We invert Y since our screen coordinates have Y=0 at top.
+ * 
+ * The accumulator approach below smooths out small movements and
+ * provides sub-pixel precision for better cursor control.
+ */
 void poll_mouse(void) {
     static unsigned char mouse_bytes[3];
     static int byte_num = 0;
@@ -457,12 +519,17 @@ void poll_mouse(void) {
     unsigned char data;
     int packets_processed = 0;
     
-    /* Read all available bytes from serial port */
+    /* Read all available bytes from serial port.
+     * Why limit to 10 packets: We process at most 10 packets per poll to
+     * prevent the mouse from monopolizing CPU time. Since we poll frequently,
+     * this doesn't cause noticeable lag but ensures keyboard remains responsive. */
     while ((inb(COM1_LSR) & 0x01) && packets_processed < 10) {
         data = inb(COM1_DATA);
         
-        /* Microsoft protocol: First byte has bit 6 set, bit 7 clear */
-        /* Also validate that subsequent bytes don't have bit 6 set */
+        /* Microsoft protocol: First byte has bit 6 set, bit 7 clear.
+         * Why: This bit pattern allows re-synchronization if we start
+         * reading in the middle of a packet stream. We can always find
+         * the start of the next packet by looking for this signature. */
         if ((data & 0xC0) == 0x40) {
             /* This looks like a first byte - start new packet */
             byte_num = 0;
@@ -487,11 +554,11 @@ void poll_mouse(void) {
             /* Byte 1: 00XX XXXX (X movement, 6 bits) */
             /* Byte 2: 00YY YYYY (Y movement, 6 bits) */
             
+            /* Extract button states */
             int left_button = (mouse_bytes[0] >> 5) & 1;
             int right_button = (mouse_bytes[0] >> 4) & 1;
             
-            /* Extract 8-bit signed movement values */
-            /* Combine high bits from byte 0 with low bits from bytes 1&2 */
+            /* Extract and combine movement values from split fields */
             int dx = (mouse_bytes[1] & 0x3F) | ((mouse_bytes[0] & 0x03) << 6);
             int dy = (mouse_bytes[2] & 0x3F) | ((mouse_bytes[0] & 0x0C) << 4);
             
@@ -540,7 +607,8 @@ void poll_mouse(void) {
                     int line = 0;
                     int col = 0;
                     
-                    /* Scan through buffer to find the clicked position */
+                    /* Walk through the buffer character by character, tracking our
+                     * screen position until we reach the clicked coordinates */
                     for (buf_pos = 0; buf_pos < page->length; buf_pos++) {
                         /* Check if we reached the clicked position */
                         if (line == click_y && col == click_x) {
@@ -584,11 +652,11 @@ void poll_mouse(void) {
                         /* Check if clicked on a word or whitespace */
                         char clicked_char = page->buffer[buf_pos];
                         if (clicked_char == ' ' || clicked_char == '\n' || clicked_char == '\t') {
-                            /* Clicked on whitespace - clear highlight */
+                            /* Clear any existing highlight */
                             page->highlight_start = 0;
                             page->highlight_end = 0;
                         } else {
-                            /* Clicked on a word - find boundaries */
+                            /* Find and highlight the complete word */
                             page->highlight_start = buf_pos;
                             page->highlight_end = buf_pos + 1;  /* Start with at least one char */
                             
