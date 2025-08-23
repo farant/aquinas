@@ -19,15 +19,23 @@ static inline void outb(unsigned short port, unsigned char val) {
 
 /* Update hardware cursor position */
 void update_cursor(void) {
-    /* Calculate visual position accounting for newlines */
+    /* Calculate visual position accounting for newlines and tabs */
     int screen_pos = 0;
     int buf_pos = screen_offset;
     
     while (buf_pos < cursor_pos && screen_pos < VGA_WIDTH * VGA_HEIGHT) {
-        if (buf_pos < buffer_length && text_buffer[buf_pos] == '\n') {
-            /* Jump to next line */
-            int col = screen_pos % VGA_WIDTH;
-            screen_pos += (VGA_WIDTH - col);
+        if (buf_pos < buffer_length) {
+            char c = text_buffer[buf_pos];
+            if (c == '\n') {
+                /* Jump to next line */
+                int col = screen_pos % VGA_WIDTH;
+                screen_pos += (VGA_WIDTH - col);
+            } else if (c == '\t') {
+                /* Tab takes 2 screen positions */
+                screen_pos += 2;
+            } else {
+                screen_pos++;
+            }
         } else {
             screen_pos++;
         }
@@ -61,8 +69,17 @@ void refresh_screen(void) {
                     col++;
                 }
                 buf_pos++;
+            } else if (c == '\t') {
+                /* Display tab as two spaces */
+                if (screen_pos < VGA_WIDTH * VGA_HEIGHT) {
+                    VGA_BUFFER[screen_pos++] = VGA_COLOR | ' ';
+                }
+                if (screen_pos < VGA_WIDTH * VGA_HEIGHT) {
+                    VGA_BUFFER[screen_pos++] = VGA_COLOR | ' ';
+                }
+                buf_pos++;
             } else {
-                /* Regular character (including spaces for tabs) */
+                /* Regular character */
                 VGA_BUFFER[screen_pos++] = VGA_COLOR | c;
                 buf_pos++;
             }
@@ -302,9 +319,8 @@ void kernel_main(void) {
             move_cursor_right();
         } else if (key == '\b') {  /* Backspace */
             delete_char();
-        } else if (key == '\t') {  /* Tab - insert two spaces */
-            insert_char(' ');
-            insert_char(' ');
+        } else if (key == '\t') {  /* Tab - insert actual tab character */
+            insert_char('\t');
         } else if (key > 0 && key != 27) {  /* Regular character, ignore ESC */
             insert_char((char)key);
         }
