@@ -13,7 +13,7 @@ BOOT_DIR = $(SRC_DIR)/boot
 KERNEL_DIR = $(SRC_DIR)/kernel
 
 # Flags
-CFLAGS = -m32 -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -O2
+CFLAGS = -m32 -std=c89 -pedantic -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -O2
 LDFLAGS = -m elf_i386 -T $(SRC_DIR)/linker.ld -nostdlib
 
 # Source files

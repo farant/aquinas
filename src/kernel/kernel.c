@@ -89,9 +89,16 @@ void next_page(void) {
 
 /* Draw navigation bar at top of screen */
 void draw_nav_bar(void) {
+    int i;
+    unsigned short color;
+    char page_info[40];
+    int len = 0;
+    int page_num;
+    int start_pos;
+    
     /* Fill top line with white background (inverse colors) */
-    for (int i = 0; i < VGA_WIDTH; i++) {
-        unsigned short color = VGA_COLOR_NAV_BAR;  /* Gray background, black text */
+    for (i = 0; i < VGA_WIDTH; i++) {
+        color = VGA_COLOR_NAV_BAR;  /* Gray background, black text */
         /* Check if mouse is on this position */
         if (mouse_visible && mouse_y == 0 && mouse_x == i) {
             color = VGA_COLOR_MOUSE;  /* Green background for mouse cursor */
@@ -100,8 +107,6 @@ void draw_nav_bar(void) {
     }
     
     /* Format page info string */
-    char page_info[40];
-    int len = 0;
     
     /* Always reserve space for [prev], but only draw if not on first page */
     if (current_page > 0) {
@@ -130,7 +135,7 @@ void draw_nav_bar(void) {
     page_info[len++] = ' ';
     
     /* Add current page number */
-    int page_num = current_page + 1;
+    page_num = current_page + 1;
     if (page_num >= 10) {
         page_info[len++] = '0' + (page_num / 10);
     }
@@ -156,9 +161,9 @@ void draw_nav_bar(void) {
     page_info[len++] = ']';
     
     /* Center the text in the nav bar */
-    int start_pos = (VGA_WIDTH - len) / 2;
-    for (int i = 0; i < len; i++) {
-        unsigned short color = 0x7000;  /* Gray background */
+    start_pos = (VGA_WIDTH - len) / 2;
+    for (i = 0; i < len; i++) {
+        color = 0x7000;  /* Gray background */
         /* Check if mouse is on this position */
         if (mouse_visible && mouse_y == 0 && mouse_x == start_pos + i) {
             color = VGA_COLOR_MOUSE;  /* Green background for mouse cursor */
@@ -199,8 +204,18 @@ void update_cursor(void) {
 
 /* Redraw the screen from the buffer */
 void refresh_screen(void) {
+    int i;
+    Page *page;
+    int screen_pos;
+    int buf_pos;
+    unsigned short color;
+    char c;
+    int col;
+    int j;
+    unsigned short tab_color;
+    
     /* Clear only the text area (not nav bar) to prevent flickering */
-    for (int i = VGA_WIDTH; i < VGA_WIDTH * VGA_HEIGHT; i++) {
+    for (i = VGA_WIDTH; i < VGA_WIDTH * VGA_HEIGHT; i++) {
         vga_write_char(i, ' ', VGA_COLOR);
     }
     
@@ -208,14 +223,14 @@ void refresh_screen(void) {
     draw_nav_bar();
     
     /* Get current page */
-    Page *page = &pages[current_page];
+    page = &pages[current_page];
     
     /* Start drawing text from line 1 (after nav bar) */
-    int screen_pos = VGA_WIDTH;  /* Skip first line */
-    int buf_pos = 0;
+    screen_pos = VGA_WIDTH;  /* Skip first line */
+    buf_pos = 0;
     
     while (screen_pos < VGA_WIDTH * VGA_HEIGHT && buf_pos < page->length) {
-        unsigned short color = VGA_COLOR;
+        color = VGA_COLOR;
         
         /* Check if this is the mouse position */
         if (mouse_visible && screen_pos == (mouse_y * VGA_WIDTH + mouse_x)) {
@@ -229,10 +244,10 @@ void refresh_screen(void) {
             color = VGA_COLOR_HIGHLIGHT;  /* Red background for highlighted text */
         }
         
-        char c = page->buffer[buf_pos];
+        c = page->buffer[buf_pos];
         if (c == '\n') {
             /* Fill rest of line with spaces */
-            int col = screen_pos % VGA_WIDTH;
+            col = screen_pos % VGA_WIDTH;
             while (col < VGA_WIDTH && screen_pos < VGA_WIDTH * VGA_HEIGHT) {
                 /* Check mouse position for each space */
                 if (mouse_visible && screen_pos == (mouse_y * VGA_WIDTH + mouse_x)) {
@@ -245,8 +260,8 @@ void refresh_screen(void) {
             buf_pos++;
         } else if (c == '\t') {
             /* Display tab as two spaces */
-            for (int i = 0; i < 2 && screen_pos < VGA_WIDTH * VGA_HEIGHT; i++) {
-                unsigned short tab_color = color;
+            for (j = 0; j < 2 && screen_pos < VGA_WIDTH * VGA_HEIGHT; j++) {
+                tab_color = color;
                 if (mouse_visible && screen_pos == (mouse_y * VGA_WIDTH + mouse_x)) {
                     tab_color = 0x2F00;
                 }
@@ -274,6 +289,10 @@ void refresh_screen(void) {
 /* Insert a character at cursor position */
 void insert_char(char c) {
     Page *page = &pages[current_page];
+    int line_start;
+    int indent_count;
+    int check_pos;
+    int i;
     
     /* Check if page is full.
      * Why PAGE_SIZE - 1: We reserve one byte as a safety margin to prevent
@@ -284,14 +303,14 @@ void insert_char(char c) {
     /* If inserting newline, handle auto-indentation */
     if (c == '\n') {
         /* Find the start of the current line */
-        int line_start = page->cursor_pos;
+        line_start = page->cursor_pos;
         while (line_start > 0 && page->buffer[line_start - 1] != '\n') {
             line_start--;
         }
         
         /* Count leading spaces/tabs on current line */
-        int indent_count = 0;
-        int check_pos = line_start;
+        indent_count = 0;
+        check_pos = line_start;
         while (check_pos < page->length && 
                (page->buffer[check_pos] == ' ' || page->buffer[check_pos] == '\t')) {
             indent_count++;
@@ -302,7 +321,7 @@ void insert_char(char c) {
         if (page->length + 1 + indent_count >= PAGE_SIZE - 1) return;
         
         /* Shift everything after cursor forward to make room for newline + indentation */
-        for (int i = page->length + indent_count; i > page->cursor_pos; i--) {
+        for (i = page->length + indent_count; i > page->cursor_pos; i--) {
             page->buffer[i] = page->buffer[i - 1 - indent_count];
         }
         
@@ -312,7 +331,7 @@ void insert_char(char c) {
         page->length++;
         
         /* Copy indentation from current line */
-        for (int i = 0; i < indent_count; i++) {
+        for (i = 0; i < indent_count; i++) {
             page->buffer[page->cursor_pos] = page->buffer[line_start + i];
             page->cursor_pos++;
             page->length++;
@@ -320,7 +339,7 @@ void insert_char(char c) {
     } else {
         /* Normal character insertion */
         /* Shift everything after cursor forward */
-        for (int i = page->length; i > page->cursor_pos; i--) {
+        for (i = page->length; i > page->cursor_pos; i--) {
             page->buffer[i] = page->buffer[i - 1];
         }
         
@@ -336,11 +355,12 @@ void insert_char(char c) {
 /* Delete character before cursor (backspace) */
 void delete_char(void) {
     Page *page = &pages[current_page];
+    int i;
     
     if (page->cursor_pos == 0) return;
     
     /* Shift everything after cursor backward */
-    for (int i = page->cursor_pos - 1; i < page->length - 1; i++) {
+    for (i = page->cursor_pos - 1; i < page->length - 1; i++) {
         page->buffer[i] = page->buffer[i + 1];
     }
     
@@ -351,11 +371,13 @@ void delete_char(void) {
 }
 
 void clear_screen(void) {
+    Page *page;
+    
     /* Use VGA module to clear screen */
     vga_clear_screen();
     
     /* Clear current page */
-    Page *page = &pages[current_page];
+    page = &pages[current_page];
     page->cursor_pos = 0;
     page->length = 0;
     update_cursor();
@@ -397,9 +419,13 @@ void move_cursor_right(void) {
 
 void move_cursor_up(void) {
     Page *page = &pages[current_page];
+    int line_start;
+    int prev_line_start;
+    int col;
+    int prev_line_length;
     
     /* Find start of current line */
-    int line_start = page->cursor_pos;
+    line_start = page->cursor_pos;
     while (line_start > 0 && page->buffer[line_start - 1] != '\n') {
         line_start--;
     }
@@ -408,16 +434,16 @@ void move_cursor_up(void) {
     if (line_start == 0) return;
     
     /* Find start of previous line */
-    int prev_line_start = line_start - 1;
+    prev_line_start = line_start - 1;
     while (prev_line_start > 0 && page->buffer[prev_line_start - 1] != '\n') {
         prev_line_start--;
     }
     
     /* Calculate position in line */
-    int col = page->cursor_pos - line_start;
+    col = page->cursor_pos - line_start;
     
     /* Move to same column in previous line */
-    int prev_line_length = (line_start - 1) - prev_line_start;
+    prev_line_length = (line_start - 1) - prev_line_start;
     if (col > prev_line_length) {
         page->cursor_pos = line_start - 1; /* End of previous line */
     } else {
@@ -429,9 +455,15 @@ void move_cursor_up(void) {
 
 void move_cursor_down(void) {
     Page *page = &pages[current_page];
+    int line_end;
+    int line_start;
+    int col;
+    int next_line_start;
+    int next_line_end;
+    int next_line_length;
     
     /* Find end of current line */
-    int line_end = page->cursor_pos;
+    line_end = page->cursor_pos;
     while (line_end < page->length && page->buffer[line_end] != '\n') {
         line_end++;
     }
@@ -440,23 +472,23 @@ void move_cursor_down(void) {
     if (line_end >= page->length) return;
     
     /* Find start of current line */
-    int line_start = page->cursor_pos;
+    line_start = page->cursor_pos;
     while (line_start > 0 && page->buffer[line_start - 1] != '\n') {
         line_start--;
     }
     
     /* Calculate position in line */
-    int col = page->cursor_pos - line_start;
+    col = page->cursor_pos - line_start;
     
     /* Find length of next line */
-    int next_line_start = line_end + 1;
-    int next_line_end = next_line_start;
+    next_line_start = line_end + 1;
+    next_line_end = next_line_start;
     while (next_line_end < page->length && page->buffer[next_line_end] != '\n') {
         next_line_end++;
     }
     
     /* Move to same column in next line */
-    int next_line_length = next_line_end - next_line_start;
+    next_line_length = next_line_end - next_line_start;
     if (col > next_line_length) {
         page->cursor_pos = next_line_end;
     } else {

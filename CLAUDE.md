@@ -2,7 +2,7 @@ Don't need to delete any .stml files
 
 ## AI Suggestions
 
-When you have ideas for improvements or things to work on beyond what the user has explicitly requested, add them to `AI_SUGGESTIONS.md`. This file serves as a place to capture potential enhancements you've noticed while working on the codebase.
+When you have ideas for improvements or things to work on beyond what the user has explicitly requested (it's okay to add these even if you are in the middle of working on something else), add them to `AI_SUGGESTIONS.md`. This file serves as a place to capture potential enhancements you've noticed while working on the codebase.
 
 Format suggestions clearly with:
 - A brief title

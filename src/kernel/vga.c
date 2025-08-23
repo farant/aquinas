@@ -11,8 +11,9 @@ void vga_init(void) {
 
 /* Clear the entire screen with default color */
 void vga_clear_screen(void) {
+    int i;
     /* Fill entire buffer with spaces and default color */
-    for (int i = 0; i < VGA_WIDTH * VGA_HEIGHT; i++) {
+    for (i = 0; i < VGA_WIDTH * VGA_HEIGHT; i++) {
         VGA_BUFFER[i] = VGA_COLOR | ' ';
     }
 }
@@ -38,7 +39,8 @@ void vga_write_string(int pos, const char *str, unsigned short color) {
 
 /* Fill a region with a specific character and color */
 void vga_fill_region(int start, int length, char c, unsigned short color) {
-    for (int i = 0; i < length && SAFE_VGA_POS(start + i); i++) {
+    int i;
+    for (i = 0; i < length && SAFE_VGA_POS(start + i); i++) {
         VGA_BUFFER[start + i] = color | c;
     }
 }
