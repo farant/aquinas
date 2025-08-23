@@ -298,62 +298,67 @@ void move_cursor_down(void) {
 void poll_mouse(void) {
     static unsigned char mouse_bytes[3];
     static int byte_num = 0;
+    static int accumulated_dx = 0;  /* Accumulate fractional X movements */
+    static int accumulated_dy = 0;  /* Accumulate fractional Y movements */
+    static int prev_left_button = 0;  /* Track previous button state */
     unsigned char data;
+    int packets_processed = 0;
     
-    /* Check if serial data is available */
-    if (!(inb(COM1_LSR) & 0x01)) return;
-    
-    data = inb(COM1_DATA);
-    
-    /* Microsoft protocol: First byte has bit 6 set */
-    if (data & 0x40) {
-        byte_num = 0;  /* Start of new packet */
-    }
-    
-    if (byte_num < 3) {
-        mouse_bytes[byte_num++] = data;
-    }
-    
-    if (byte_num == 3) {
-        /* Parse Microsoft mouse packet */
-        /* Byte 0: 01LR YYyy XXxx (L=left button, R=right button) */
-        /* Byte 1: 00XX XXXX (X movement) */
-        /* Byte 2: 00YY YYYY (Y movement) */
+    /* Read all available bytes from serial port */
+    while ((inb(COM1_LSR) & 0x01) && packets_processed < 10) {
+        data = inb(COM1_DATA);
         
-        int left_button = (mouse_bytes[0] >> 5) & 1;
-        int right_button = (mouse_bytes[0] >> 4) & 1;
+        /* Microsoft protocol: First byte has bit 6 set, bit 7 clear */
+        /* Also validate that subsequent bytes don't have bit 6 set */
+        if ((data & 0xC0) == 0x40) {
+            /* This looks like a first byte - start new packet */
+            byte_num = 0;
+            mouse_bytes[0] = data;
+            byte_num = 1;
+        } else if (byte_num > 0 && (data & 0x40) == 0) {
+            /* This looks like a continuation byte (bit 6 clear) */
+            mouse_bytes[byte_num++] = data;
+        } else {
+            /* Invalid byte - reset and wait for valid first byte */
+            byte_num = 0;
+            continue;
+        }
         
-        /* Combine the movement bits */
-        int dx = ((mouse_bytes[0] & 0x03) << 6) | (mouse_bytes[1] & 0x3F);
-        int dy = ((mouse_bytes[0] & 0x0C) << 4) | (mouse_bytes[2] & 0x3F);
-        
-        /* Sign extend for negative values */
-        if (dx > 127) dx -= 256;
-        if (dy > 127) dy -= 256;
+        /* Process complete packet */
+        if (byte_num == 3) {
+            byte_num = 0;  /* Reset for next packet */
+            packets_processed++;
+            
+            /* Parse Microsoft mouse packet */
+            /* Byte 0: 01LR YYyy XXxx (L=left button, R=right button) */
+            /* Byte 1: 00XX XXXX (X movement, 6 bits) */
+            /* Byte 2: 00YY YYYY (Y movement, 6 bits) */
+            
+            int left_button = (mouse_bytes[0] >> 5) & 1;
+            int right_button = (mouse_bytes[0] >> 4) & 1;
+            
+            /* Extract 8-bit signed movement values */
+            /* Combine high bits from byte 0 with low bits from bytes 1&2 */
+            int dx = (mouse_bytes[1] & 0x3F) | ((mouse_bytes[0] & 0x03) << 6);
+            int dy = (mouse_bytes[2] & 0x3F) | ((mouse_bytes[0] & 0x0C) << 4);
+            
+            /* Sign extend from 8-bit to full int */
+            if (dx & 0x80) dx = dx - 256;
+            if (dy & 0x80) dy = dy - 256;
         
         /* Store old position to check if mouse moved */
         int old_x = mouse_x;
         int old_y = mouse_y;
         
-        /* Update position (scale movement for text mode) */
-        mouse_x += dx / 8;
-        mouse_y += dy / 8;  /* Serial mouse Y matches screen direction */
-        
-        /* Clamp to screen bounds */
-        if (mouse_x < 0) mouse_x = 0;
-        if (mouse_x >= VGA_WIDTH) mouse_x = VGA_WIDTH - 1;
-        if (mouse_y < 0) mouse_y = 0;
-        if (mouse_y >= VGA_HEIGHT) mouse_y = VGA_HEIGHT - 1;
-        
-        /* Refresh if mouse moved */
-        if (mouse_x != old_x || mouse_y != old_y) {
-            refresh_screen();
-        }
-        
-        /* Check for left click */
-        if (left_button) {
+        /* Check for left click BEFORE updating position */
+        /* This uses the position where the button was pressed, not where mouse moved to */
+        if (left_button && !prev_left_button) {
+            /* Capture click at current position before any movement */
+            int click_x = mouse_x;
+            int click_y = mouse_y;
+            
             /* Find what position in buffer corresponds to screen position */
-            int screen_pos = mouse_y * VGA_WIDTH + mouse_x;
+            int screen_pos = click_y * VGA_WIDTH + click_x;
             int buf_pos = screen_offset;
             int curr_screen_pos = 0;
             
@@ -400,7 +405,83 @@ void poll_mouse(void) {
                 refresh_screen();
             }
         }
-    }
+        
+        /* Only update mouse position if button is NOT held down */
+        /* This prevents cursor movement during clicks/drags */
+        if (!left_button) {
+            /* Accumulate mouse movements for smooth, responsive control */
+            /* This ensures even tiny movements eventually register */
+            accumulated_dx += dx;
+            accumulated_dy += dy;
+            
+            /* Apply accumulated movement with scaling */
+            /* Divide by 10 for slower, more controlled movement */
+            if (accumulated_dx != 0) {
+                /* Add threshold for horizontal movement to prevent column jitter */
+                /* Less strict than vertical to keep horizontal movement fluid */
+                int move_x = accumulated_dx / 12;  /* Slightly higher divisor for X axis */
+                if (move_x == 0 && (accumulated_dx > 10 || accumulated_dx < -10)) {
+                    /* Only move if accumulated enough (more than 10 units) */
+                    /* This prevents accidental column changes */
+                    move_x = (accumulated_dx > 0) ? 1 : -1;
+                    accumulated_dx -= move_x * 12;  /* Consume the movement */
+                } else if (move_x != 0) {
+                    accumulated_dx -= move_x * 12;  /* Keep remainder for next time */
+                }
+                /* If not enough accumulation, keep building up */
+                mouse_x += move_x;
+            }
+            
+            if (accumulated_dy != 0) {
+                /* Add extra threshold for vertical movement to prevent line jitter */
+                /* Require more accumulation before moving vertically */
+                int move_y = accumulated_dy / 15;  /* Higher divisor for Y axis */
+                if (move_y == 0 && (accumulated_dy > 12 || accumulated_dy < -12)) {
+                    /* Only move if accumulated enough (more than 12 units) */
+                    /* This prevents accidental line changes */
+                    move_y = (accumulated_dy > 0) ? 1 : -1;
+                    accumulated_dy -= move_y * 15;  /* Consume the movement */
+                } else if (move_y != 0) {
+                    accumulated_dy -= move_y * 15;  /* Keep remainder for next time */
+                }
+                /* If not enough accumulation, keep building up */
+                mouse_y += move_y;
+            }
+            
+            /* Clamp to screen bounds and clear accumulated values at edges */
+            if (mouse_x < 0) {
+                mouse_x = 0;
+                accumulated_dx = 0;  /* Clear accumulator at edge */
+            }
+            if (mouse_x >= VGA_WIDTH) {
+                mouse_x = VGA_WIDTH - 1;
+                accumulated_dx = 0;  /* Clear accumulator at edge */
+            }
+            if (mouse_y < 0) {
+                mouse_y = 0;
+                accumulated_dy = 0;  /* Clear accumulator at edge */
+            }
+            if (mouse_y >= VGA_HEIGHT) {
+                mouse_y = VGA_HEIGHT - 1;
+                accumulated_dy = 0;  /* Clear accumulator at edge */
+            }
+        } else {
+            /* While button is held, discard movement data */
+            /* This prevents accumulation during drag */
+            accumulated_dx = 0;
+            accumulated_dy = 0;
+        }
+        
+        /* Refresh if mouse moved */
+        if (mouse_x != old_x || mouse_y != old_y) {
+            refresh_screen();
+        }
+        
+        /* Update previous button state for next frame */
+        prev_left_button = left_button;
+        
+        }  /* End of if (byte_num == 3) */
+    }  /* End of while loop reading serial data */
 }
 
 /* Non-blocking keyboard check */
