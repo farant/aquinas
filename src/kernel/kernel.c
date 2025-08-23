@@ -6,11 +6,19 @@
 #define VGA_COLOR 0x1F00  /* Blue background, white text */
 #define BUFFER_SIZE (VGA_WIDTH * VGA_HEIGHT * 4)  /* 4 screens worth */
 
-/* Text buffer to store document */
-char text_buffer[BUFFER_SIZE];
-int buffer_length = 0;     /* Current length of text in buffer */
-int cursor_pos = 0;        /* Cursor position in the buffer */
-int screen_offset = 0;     /* First character shown on screen */
+/* Page structure - each page has its own buffer and cursor */
+typedef struct {
+    char buffer[((VGA_HEIGHT - 1) * VGA_WIDTH)];  /* One screen worth of text */
+    int length;        /* Current length of text in this page */
+    int cursor_pos;    /* Cursor position in this page */
+} Page;
+
+/* Page management */
+#define PAGE_SIZE ((VGA_HEIGHT - 1) * VGA_WIDTH)  /* Characters per page */
+#define MAX_PAGES 100
+Page pages[MAX_PAGES];
+int current_page = 0;
+int total_pages = 1;
 
 /* Mouse state */
 int mouse_x = 40;          /* Mouse X position (0-79) */
@@ -19,20 +27,130 @@ int mouse_visible = 0;     /* Is mouse cursor visible */
 int highlight_start = -1;  /* Start of highlighted word */
 int highlight_end = -1;    /* End of highlighted word */
 
+/* Forward declarations */
+void refresh_screen(void);
+void draw_nav_bar(void);
+
 /* Write a byte to port */
 static inline void outb(unsigned short port, unsigned char val) {
     __asm__ volatile ("outb %0, %1" : : "a"(val), "dN"(port));
 }
 
+/* Switch to previous page */
+void prev_page(void) {
+    if (current_page > 0) {
+        current_page--;
+        /* Cursor position is already stored in the page structure */
+        refresh_screen();
+    }
+}
+
+/* Switch to next page */
+void next_page(void) {
+    if (current_page < MAX_PAGES - 1) {
+        current_page++;
+        /* Update total pages if we're creating a new page */
+        if (current_page >= total_pages) {
+            total_pages = current_page + 1;
+            /* Initialize new page */
+            pages[current_page].length = 0;
+            pages[current_page].cursor_pos = 0;
+        }
+        /* Cursor position is already stored in the page structure */
+        refresh_screen();
+    }
+}
+
+/* Draw navigation bar at top of screen */
+void draw_nav_bar(void) {
+    /* Fill top line with white background (inverse colors) */
+    for (int i = 0; i < VGA_WIDTH; i++) {
+        unsigned short color = 0x7000;  /* Gray background, black text */
+        /* Check if mouse is on this position */
+        if (mouse_visible && mouse_y == 0 && mouse_x == i) {
+            color = 0x2F00;  /* Green background for mouse cursor */
+        }
+        VGA_BUFFER[i] = color | ' ';
+    }
+    
+    /* Format page info string */
+    char page_info[40];
+    int len = 0;
+    
+    /* Always reserve space for [prev], but only draw if not on first page */
+    if (current_page > 0) {
+        page_info[len++] = '[';
+        page_info[len++] = 'p';
+        page_info[len++] = 'r';
+        page_info[len++] = 'e';
+        page_info[len++] = 'v';
+        page_info[len++] = ']';
+    } else {
+        /* Add spaces to keep alignment */
+        page_info[len++] = ' ';
+        page_info[len++] = ' ';
+        page_info[len++] = ' ';
+        page_info[len++] = ' ';
+        page_info[len++] = ' ';
+        page_info[len++] = ' ';
+    }
+    page_info[len++] = ' ';
+    
+    /* Add "Page n of x" */
+    page_info[len++] = 'P';
+    page_info[len++] = 'a';
+    page_info[len++] = 'g';
+    page_info[len++] = 'e';
+    page_info[len++] = ' ';
+    
+    /* Add current page number */
+    int page_num = current_page + 1;
+    if (page_num >= 10) {
+        page_info[len++] = '0' + (page_num / 10);
+    }
+    page_info[len++] = '0' + (page_num % 10);
+    
+    page_info[len++] = ' ';
+    page_info[len++] = 'o';
+    page_info[len++] = 'f';
+    page_info[len++] = ' ';
+    
+    /* Add total pages */
+    if (total_pages >= 10) {
+        page_info[len++] = '0' + (total_pages / 10);
+    }
+    page_info[len++] = '0' + (total_pages % 10);
+    
+    page_info[len++] = ' ';
+    page_info[len++] = '[';
+    page_info[len++] = 'n';
+    page_info[len++] = 'e';
+    page_info[len++] = 'x';
+    page_info[len++] = 't';
+    page_info[len++] = ']';
+    
+    /* Center the text in the nav bar */
+    int start_pos = (VGA_WIDTH - len) / 2;
+    for (int i = 0; i < len; i++) {
+        unsigned short color = 0x7000;  /* Gray background */
+        /* Check if mouse is on this position */
+        if (mouse_visible && mouse_y == 0 && mouse_x == start_pos + i) {
+            color = 0x2F00;  /* Green background for mouse cursor */
+        }
+        VGA_BUFFER[start_pos + i] = color | page_info[i];
+    }
+}
+
 /* Update hardware cursor position */
 void update_cursor(void) {
     /* Calculate visual position accounting for newlines and tabs */
-    int screen_pos = 0;
-    int buf_pos = screen_offset;
+    Page *page = &pages[current_page];
+    int screen_pos = VGA_WIDTH;  /* Start after nav bar */
+    int buf_pos = 0;
     
-    while (buf_pos < cursor_pos && screen_pos < VGA_WIDTH * VGA_HEIGHT) {
-        if (buf_pos < buffer_length) {
-            char c = text_buffer[buf_pos];
+    while (buf_pos < page->cursor_pos && screen_pos < VGA_WIDTH * VGA_HEIGHT) {
+        if (buf_pos < page->length) {
+            char c = page->buffer[buf_pos];
             if (c == '\n') {
                 /* Jump to next line */
                 int col = screen_pos % VGA_WIDTH;
@@ -62,10 +180,22 @@ void update_cursor(void) {
 
 /* Redraw the screen from the buffer */
 void refresh_screen(void) {
-    int screen_pos = 0;
-    int buf_pos = screen_offset;
+    /* Clear only the text area (not nav bar) to prevent flickering */
+    for (int i = VGA_WIDTH; i < VGA_WIDTH * VGA_HEIGHT; i++) {
+        VGA_BUFFER[i] = VGA_COLOR | ' ';
+    }
     
-    while (screen_pos < VGA_WIDTH * VGA_HEIGHT) {
+    /* Always redraw navigation bar to update mouse cursor */
+    draw_nav_bar();
+    
+    /* Get current page */
+    Page *page = &pages[current_page];
+    
+    /* Start drawing text from line 1 (after nav bar) */
+    int screen_pos = VGA_WIDTH;  /* Skip first line */
+    int buf_pos = 0;
+    
+    while (screen_pos < VGA_WIDTH * VGA_HEIGHT && buf_pos < page->length) {
         unsigned short color = VGA_COLOR;
         
         /* Check if this is the mouse position */
@@ -78,43 +208,43 @@ void refresh_screen(void) {
             color = 0x4F00;  /* Red background for highlighted text */
         }
         
-        if (buf_pos < buffer_length) {
-            char c = text_buffer[buf_pos];
-            if (c == '\n') {
-                /* Fill rest of line with spaces */
-                int col = screen_pos % VGA_WIDTH;
-                while (col < VGA_WIDTH && screen_pos < VGA_WIDTH * VGA_HEIGHT) {
-                    /* Check mouse position for each space */
-                    if (mouse_visible && screen_pos == (mouse_y * VGA_WIDTH + mouse_x)) {
-                        VGA_BUFFER[screen_pos++] = 0x2F00 | ' ';
-                    } else {
-                        VGA_BUFFER[screen_pos++] = VGA_COLOR | ' ';
-                    }
-                    col++;
+        char c = page->buffer[buf_pos];
+        if (c == '\n') {
+            /* Fill rest of line with spaces */
+            int col = screen_pos % VGA_WIDTH;
+            while (col < VGA_WIDTH && screen_pos < VGA_WIDTH * VGA_HEIGHT) {
+                /* Check mouse position for each space */
+                if (mouse_visible && screen_pos == (mouse_y * VGA_WIDTH + mouse_x)) {
+                    VGA_BUFFER[screen_pos++] = 0x2F00 | ' ';
+                } else {
+                    VGA_BUFFER[screen_pos++] = VGA_COLOR | ' ';
                 }
-                buf_pos++;
-            } else if (c == '\t') {
-                /* Display tab as two spaces */
-                for (int i = 0; i < 2 && screen_pos < VGA_WIDTH * VGA_HEIGHT; i++) {
-                    unsigned short tab_color = color;
-                    if (mouse_visible && screen_pos == (mouse_y * VGA_WIDTH + mouse_x)) {
-                        tab_color = 0x2F00;
-                    }
-                    VGA_BUFFER[screen_pos++] = tab_color | ' ';
-                }
-                buf_pos++;
-            } else {
-                /* Regular character */
-                VGA_BUFFER[screen_pos++] = color | c;
-                buf_pos++;
+                col++;
             }
+            buf_pos++;
+        } else if (c == '\t') {
+            /* Display tab as two spaces */
+            for (int i = 0; i < 2 && screen_pos < VGA_WIDTH * VGA_HEIGHT; i++) {
+                unsigned short tab_color = color;
+                if (mouse_visible && screen_pos == (mouse_y * VGA_WIDTH + mouse_x)) {
+                    tab_color = 0x2F00;
+                }
+                VGA_BUFFER[screen_pos++] = tab_color | ' ';
+            }
+            buf_pos++;
         } else {
-            /* Past end of buffer, fill with spaces */
-            if (mouse_visible && screen_pos == (mouse_y * VGA_WIDTH + mouse_x)) {
-                VGA_BUFFER[screen_pos++] = 0x2F00 | ' ';
-            } else {
-                VGA_BUFFER[screen_pos++] = VGA_COLOR | ' ';
-            }
+            /* Regular character */
+            VGA_BUFFER[screen_pos++] = color | c;
+            buf_pos++;
+        }
+    }
+    
+    /* Fill remaining screen with spaces */
+    while (screen_pos < VGA_WIDTH * VGA_HEIGHT) {
+        if (mouse_visible && screen_pos == (mouse_y * VGA_WIDTH + mouse_x)) {
+            VGA_BUFFER[screen_pos++] = 0x2F00 | ' ';
+        } else {
+            VGA_BUFFER[screen_pos++] = VGA_COLOR | ' ';
         }
     }
     update_cursor();
@@ -122,55 +252,58 @@ void refresh_screen(void) {
 
 /* Insert a character at cursor position */
 void insert_char(char c) {
-    if (buffer_length >= BUFFER_SIZE - 1) return; /* Buffer full */
+    Page *page = &pages[current_page];
+    
+    /* Check if page is full */
+    if (page->length >= PAGE_SIZE - 1) return;
     
     /* If inserting newline, handle auto-indentation */
     if (c == '\n') {
         /* Find the start of the current line */
-        int line_start = cursor_pos;
-        while (line_start > 0 && text_buffer[line_start - 1] != '\n') {
+        int line_start = page->cursor_pos;
+        while (line_start > 0 && page->buffer[line_start - 1] != '\n') {
             line_start--;
         }
         
         /* Count leading spaces/tabs on current line */
         int indent_count = 0;
         int check_pos = line_start;
-        while (check_pos < buffer_length && 
-               (text_buffer[check_pos] == ' ' || text_buffer[check_pos] == '\t')) {
+        while (check_pos < page->length && 
+               (page->buffer[check_pos] == ' ' || page->buffer[check_pos] == '\t')) {
             indent_count++;
             check_pos++;
         }
         
         /* Make sure we have enough space for newline + indentation */
-        if (buffer_length + 1 + indent_count >= BUFFER_SIZE - 1) return;
+        if (page->length + 1 + indent_count >= PAGE_SIZE - 1) return;
         
         /* Shift everything after cursor forward to make room for newline + indentation */
-        for (int i = buffer_length + indent_count; i > cursor_pos; i--) {
-            text_buffer[i] = text_buffer[i - 1 - indent_count];
+        for (int i = page->length + indent_count; i > page->cursor_pos; i--) {
+            page->buffer[i] = page->buffer[i - 1 - indent_count];
         }
         
         /* Insert newline */
-        text_buffer[cursor_pos] = '\n';
-        cursor_pos++;
-        buffer_length++;
+        page->buffer[page->cursor_pos] = '\n';
+        page->cursor_pos++;
+        page->length++;
         
         /* Copy indentation from current line */
         for (int i = 0; i < indent_count; i++) {
-            text_buffer[cursor_pos] = text_buffer[line_start + i];
-            cursor_pos++;
-            buffer_length++;
+            page->buffer[page->cursor_pos] = page->buffer[line_start + i];
+            page->cursor_pos++;
+            page->length++;
         }
     } else {
         /* Normal character insertion */
         /* Shift everything after cursor forward */
-        for (int i = buffer_length; i > cursor_pos; i--) {
-            text_buffer[i] = text_buffer[i - 1];
+        for (int i = page->length; i > page->cursor_pos; i--) {
+            page->buffer[i] = page->buffer[i - 1];
         }
         
         /* Insert the character */
-        text_buffer[cursor_pos] = c;
-        cursor_pos++;
-        buffer_length++;
+        page->buffer[page->cursor_pos] = c;
+        page->cursor_pos++;
+        page->length++;
     }
     
     refresh_screen();
@@ -178,15 +311,17 @@ void insert_char(char c) {
 
 /* Delete character before cursor (backspace) */
 void delete_char(void) {
-    if (cursor_pos == 0) return;
+    Page *page = &pages[current_page];
+    
+    if (page->cursor_pos == 0) return;
     
     /* Shift everything after cursor backward */
-    for (int i = cursor_pos - 1; i < buffer_length - 1; i++) {
-        text_buffer[i] = text_buffer[i + 1];
+    for (int i = page->cursor_pos - 1; i < page->length - 1; i++) {
+        page->buffer[i] = page->buffer[i + 1];
     }
     
-    cursor_pos--;
-    buffer_length--;
+    page->cursor_pos--;
+    page->length--;
     
     refresh_screen();
 }
@@ -195,7 +330,10 @@ void clear_screen(void) {
     for (int i = 0; i < VGA_WIDTH * VGA_HEIGHT; i++) {
         VGA_BUFFER[i] = VGA_COLOR | ' ';
     }
-    cursor_pos = 0;
+    /* Clear current page */
+    Page *page = &pages[current_page];
+    page->cursor_pos = 0;
+    page->length = 0;
     update_cursor();
 }
 
@@ -250,23 +388,27 @@ void init_mouse(void) {
 
 /* Move cursor */
 void move_cursor_left(void) {
-    if (cursor_pos > 0) {
-        cursor_pos--;
+    Page *page = &pages[current_page];
+    if (page->cursor_pos > 0) {
+        page->cursor_pos--;
         refresh_screen();
     }
 }
 
 void move_cursor_right(void) {
-    if (cursor_pos < buffer_length) {
-        cursor_pos++;
+    Page *page = &pages[current_page];
+    if (page->cursor_pos < page->length) {
+        page->cursor_pos++;
         refresh_screen();
     }
 }
 
 void move_cursor_up(void) {
+    Page *page = &pages[current_page];
+    
     /* Find start of current line */
-    int line_start = cursor_pos;
-    while (line_start > 0 && text_buffer[line_start - 1] != '\n') {
+    int line_start = page->cursor_pos;
+    while (line_start > 0 && page->buffer[line_start - 1] != '\n') {
         line_start--;
     }
     
@@ -275,56 +417,58 @@ void move_cursor_up(void) {
     
     /* Find start of previous line */
     int prev_line_start = line_start - 1;
-    while (prev_line_start > 0 && text_buffer[prev_line_start - 1] != '\n') {
+    while (prev_line_start > 0 && page->buffer[prev_line_start - 1] != '\n') {
         prev_line_start--;
     }
     
     /* Calculate position in line */
-    int col = cursor_pos - line_start;
+    int col = page->cursor_pos - line_start;
     
     /* Move to same column in previous line */
     int prev_line_length = (line_start - 1) - prev_line_start;
     if (col > prev_line_length) {
-        cursor_pos = line_start - 1; /* End of previous line */
+        page->cursor_pos = line_start - 1; /* End of previous line */
     } else {
-        cursor_pos = prev_line_start + col;
+        page->cursor_pos = prev_line_start + col;
     }
     
     refresh_screen();
 }
 
 void move_cursor_down(void) {
+    Page *page = &pages[current_page];
+    
     /* Find end of current line */
-    int line_end = cursor_pos;
-    while (line_end < buffer_length && text_buffer[line_end] != '\n') {
+    int line_end = page->cursor_pos;
+    while (line_end < page->length && page->buffer[line_end] != '\n') {
         line_end++;
     }
     
     /* If at last line, can't go down */
-    if (line_end >= buffer_length) return;
+    if (line_end >= page->length) return;
     
     /* Find start of current line */
-    int line_start = cursor_pos;
-    while (line_start > 0 && text_buffer[line_start - 1] != '\n') {
+    int line_start = page->cursor_pos;
+    while (line_start > 0 && page->buffer[line_start - 1] != '\n') {
         line_start--;
     }
     
     /* Calculate position in line */
-    int col = cursor_pos - line_start;
+    int col = page->cursor_pos - line_start;
     
     /* Find length of next line */
     int next_line_start = line_end + 1;
     int next_line_end = next_line_start;
-    while (next_line_end < buffer_length && text_buffer[next_line_end] != '\n') {
+    while (next_line_end < page->length && page->buffer[next_line_end] != '\n') {
         next_line_end++;
     }
     
     /* Move to same column in next line */
     int next_line_length = next_line_end - next_line_start;
     if (col > next_line_length) {
-        cursor_pos = next_line_end;
+        page->cursor_pos = next_line_end;
     } else {
-        cursor_pos = next_line_start + col;
+        page->cursor_pos = next_line_start + col;
     }
     
     refresh_screen();
@@ -396,61 +540,32 @@ void poll_mouse(void) {
             int click_x = mouse_x;
             int click_y = mouse_y;
             
-            /* Find what position in buffer corresponds to screen position */
-            int screen_pos = click_y * VGA_WIDTH + click_x;
-            int buf_pos = screen_offset;
-            int curr_screen_pos = 0;
-            
-            /* Map screen position to buffer position */
-            while (curr_screen_pos < screen_pos && buf_pos < buffer_length) {
-                if (text_buffer[buf_pos] == '\n') {
-                    int col = curr_screen_pos % VGA_WIDTH;
-                    curr_screen_pos += (VGA_WIDTH - col);
-                } else if (text_buffer[buf_pos] == '\t') {
-                    curr_screen_pos += 2;
-                } else {
-                    curr_screen_pos++;
+            /* Check if click is on navigation bar */
+            if (click_y == 0) {
+                /* Calculate where the buttons are - fixed positions now */
+                int nav_text_len = 27;  /* Fixed: 6 spaces/[prev] + space + "Page xx of yy [next]" */
+                int nav_start = (VGA_WIDTH - nav_text_len) / 2;
+                
+                /* Check for [prev] button click (only if visible) */
+                if (current_page > 0 && click_x >= nav_start && click_x < nav_start + 6) {
+                    prev_page();
                 }
-                buf_pos++;
+                /* Check for [next] button click - always at same position */
+                else if (click_x >= nav_start + nav_text_len - 6 && click_x < nav_start + nav_text_len) {
+                    next_page();
+                }
             }
-            
-            /* Find word boundaries or clear highlight */
-            if (buf_pos < buffer_length) {
-                /* Check if clicked on whitespace or empty area */
-                if (text_buffer[buf_pos] == ' ' || 
-                    text_buffer[buf_pos] == '\n' || 
-                    text_buffer[buf_pos] == '\t') {
-                    /* Clicked on whitespace - clear any existing highlight */
-                    highlight_start = -1;
-                    highlight_end = -1;
-                } else {
-                    /* Clicked on a character - find word boundaries */
-                    /* Find start of word */
-                    highlight_start = buf_pos;
-                    while (highlight_start > 0 && 
-                           text_buffer[highlight_start - 1] != ' ' &&
-                           text_buffer[highlight_start - 1] != '\n' &&
-                           text_buffer[highlight_start - 1] != '\t') {
-                        highlight_start--;
-                    }
-                    
-                    /* Find end of word */
-                    highlight_end = buf_pos;
-                    while (highlight_end < buffer_length &&
-                           text_buffer[highlight_end] != ' ' &&
-                           text_buffer[highlight_end] != '\n' &&
-                           text_buffer[highlight_end] != '\t') {
-                        highlight_end++;
-                    }
-                }
-            } else {
-                /* Clicked beyond text - clear highlight */
+            /* Normal text click handling */
+            else {
+                /* Word highlighting disabled for now with new page structure */
+                /* Clear any existing highlight */
                 highlight_start = -1;
                 highlight_end = -1;
-            }
-            
-            /* Always refresh to show highlight change */
-            refresh_screen();
+                
+                /* TODO: Reimplement click-to-position cursor and word highlighting */
+                
+                refresh_screen();
+            }  /* End of else (normal text click) */
         }
         
         /* Only update mouse position if button is NOT held down */
@@ -532,8 +647,10 @@ void poll_mouse(void) {
 }
 
 /* Non-blocking keyboard check */
+/* Shift key state - must persist between calls */
+static int shift_pressed = 0;
+
 int keyboard_check(void) {
-    static int shift_pressed = 0;
     unsigned char status;
     unsigned char keycode;
     
@@ -546,22 +663,30 @@ int keyboard_check(void) {
     /* Read the keycode directly without blocking */
     keycode = inb(0x60);
     
-    /* Simple scancode to ASCII for testing - only first 60 entries matter */
-    static const char scancode_map[60] = {
-        0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
-        '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
-        0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`',
-        0, '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0,
-        '*', 0, ' '
+    /* Simple scancode to ASCII - extended to handle all keys properly */
+    static const char scancode_map[128] = {
+        0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',  /* 0-14 */
+        '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',    /* 15-28 */
+        0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`',            /* 29-41 */
+        0, '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0,              /* 42-54 */
+        '*', 0, ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       /* 55-70 */
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                           /* 71-86 */
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                           /* 87-102 */
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                           /* 103-118 */
+        0, 0, 0, 0, 0, 0, 0, 0, 0                                                  /* 119-127 */
     };
     
     /* Shifted scancode map */
-    static const char scancode_map_shift[60] = {
-        0, 27, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b',
-        '\t', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n',
-        0, 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~',
-        0, '|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 0,
-        '*', 0, ' '
+    static const char scancode_map_shift[128] = {
+        0, 27, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b',  /* 0-14 */
+        '\t', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n',    /* 15-28 */
+        0, 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~',            /* 29-41 */
+        0, '|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 0,              /* 42-54 */
+        '*', 0, ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       /* 55-70 */
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                           /* 71-86 */
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                           /* 87-102 */
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                           /* 103-118 */
+        0, 0, 0, 0, 0, 0, 0, 0, 0                                                  /* 119-127 */
     };
     
     /* Check for shift press/release (left shift = 0x2A, right shift = 0x36) */
@@ -586,7 +711,7 @@ int keyboard_check(void) {
     if (keycode == 0x4D) return -4;  /* Right arrow */
     
     /* Process regular key press */
-    if (keycode < 60) {  /* Make sure we're within array bounds */
+    if (keycode < 128) {  /* Make sure we're within array bounds */
         char c;
         
         if (shift_pressed) {
@@ -610,10 +735,13 @@ void kernel_main(void) {
     
     clear_screen();
     
-    /* Initialize empty buffer */
-    buffer_length = 0;
-    cursor_pos = 0;
-    screen_offset = 0;
+    /* Initialize page management */
+    current_page = 0;
+    total_pages = 1;  /* Start with 1 page */
+    
+    /* Initialize first page */
+    pages[0].length = 0;
+    pages[0].cursor_pos = 0;
     
     /* Initialize mouse */
     init_mouse();

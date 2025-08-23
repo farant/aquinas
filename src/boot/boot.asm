@@ -11,7 +11,7 @@ start:
     mov sp, 0x7C00
     
     ; Load kernel from sector 2 to 0x8000 (simpler address)
-    mov ax, 0x020A      ; Read 10 sectors (5KB)
+    mov ax, 0x020E      ; Read 14 sectors (7KB)
     mov cx, 0x0002      ; Cylinder 0, Sector 2
     mov dx, 0x0000      ; Head 0, Drive 0
     mov bx, 0x8000      ; Load to 0x8000
