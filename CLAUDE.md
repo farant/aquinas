@@ -5,11 +5,13 @@ Don't need to delete any .stml files
 ### Make Targets
 - `make` - Build the OS image
 - `make run` - Run the OS with mouse support and debug output to terminal
-- `make run &` - Run the OS in background (useful when developing - keeps terminal free for other commands)
 - `make run-debug` - Run with only debug output (no mouse support)
 - `make clean` - Clean build files
 
-**Tip**: Use `make run &` to run the OS in background while keeping the terminal available. Debug output will still appear in the terminal. Use `pkill -f qemu-system-x86_64` to stop it.
+### Running in Background
+**For Claude Code**: When using the Bash tool with `run_in_background: true`, the process runs in background and output can be monitored with the BashOutput tool. This is preferred for Claude Code as it allows better control and monitoring of the process. Can use this with `make run`.
+
+**To stop QEMU**: Use `pkill -f qemu-system-x86_64`
 
 ## Debugging
 
