@@ -8,15 +8,35 @@
 /* Global cursor position */
 int cursor_pos = 0;
 
+/* Write a byte to port */
+static inline void outb(unsigned short port, unsigned char val) {
+    __asm__ volatile ("outb %0, %1" : : "a"(val), "dN"(port));
+}
+
+/* Update hardware cursor position */
+void update_cursor(void) {
+    unsigned short pos = cursor_pos;
+    
+    /* Tell VGA board we're setting the high cursor byte */
+    outb(0x3D4, 0x0E);
+    outb(0x3D5, (unsigned char)((pos >> 8) & 0xFF));
+    
+    /* Tell VGA board we're setting the low cursor byte */
+    outb(0x3D4, 0x0F);
+    outb(0x3D5, (unsigned char)(pos & 0xFF));
+}
+
 /* VGA output functions */
 void putchar(char c) {
     if (c == '\n') {
         cursor_pos = ((cursor_pos / VGA_WIDTH) + 1) * VGA_WIDTH;
+        update_cursor();
         return;
     } else if (c == '\b') {  /* Backspace */
         if (cursor_pos > 0) {
             cursor_pos--;
             VGA_BUFFER[cursor_pos] = VGA_COLOR | ' ';
+            update_cursor();
         }
         return;
     }
@@ -36,6 +56,8 @@ void putchar(char c) {
         }
         cursor_pos = VGA_WIDTH * (VGA_HEIGHT - 1);
     }
+    
+    update_cursor();
 }
 
 void puts(const char* str) {
@@ -49,6 +71,7 @@ void clear_screen(void) {
         VGA_BUFFER[i] = VGA_COLOR | ' ';
     }
     cursor_pos = 0;
+    update_cursor();
 }
 
 /* Read a byte from port */
@@ -61,29 +84,65 @@ static inline unsigned char inb(unsigned short port) {
 /* Simple keyboard test */
 char keyboard_getchar(void) {
     unsigned char status;
-    char keycode;
+    unsigned char keycode;
+    static int shift_pressed = 0;  /* Make it local static again */
     
-    /* Simple scancode to ASCII for testing */
-    static const char scancode_map[128] = {
+    /* Simple scancode to ASCII for testing - only first 60 entries matter */
+    static const char scancode_map[60] = {
         0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
         '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
         0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`',
         0, '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0,
-        '*', 0, ' ', 0
+        '*', 0, ' '
     };
     
-    /* Wait for key press */
-    do {
-        status = inb(0x64);
-    } while (!(status & 1));
+    /* Shifted scancode map */
+    static const char scancode_map_shift[60] = {
+        0, 27, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b',
+        '\t', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n',
+        0, 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~',
+        0, '|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 0,
+        '*', 0, ' '
+    };
     
-    keycode = inb(0x60);
-    
-    /* Only process key press (not release) */
-    if (keycode < 128 && keycode > 0) {
-        return scancode_map[(int)keycode];
+    while (1) {
+        /* Wait for key event */
+        do {
+            status = inb(0x64);
+        } while (!(status & 1));
+        
+        keycode = inb(0x60);
+        
+        /* Check for shift press/release (left shift = 0x2A, right shift = 0x36) */
+        if (keycode == 0x2A || keycode == 0x36) {
+            shift_pressed = 1;
+            continue;  /* Get next key */
+        } else if (keycode == 0xAA || keycode == 0xB6) {  /* Shift release */
+            shift_pressed = 0;
+            continue;  /* Get next key */
+        }
+        
+        /* Skip key release events (high bit set) */
+        if (keycode & 0x80) {
+            continue;
+        }
+        
+        /* Process key press */
+        if (keycode < 60) {  /* Make sure we're within array bounds */
+            char c;
+            
+            if (shift_pressed) {
+                c = scancode_map_shift[(int)keycode];
+            } else {
+                c = scancode_map[(int)keycode];
+            }
+            
+            /* Only return if we have a valid character */
+            if (c != 0) {
+                return c;
+            }
+        }
     }
-    return 0;
 }
 
 /* Kernel entry point */
