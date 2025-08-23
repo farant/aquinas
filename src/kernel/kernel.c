@@ -541,6 +541,11 @@ void poll_mouse(void) {
     static int prev_left_button = 0;  /* Track previous button state */
     unsigned char data;
     int packets_processed = 0;
+    int left_button, right_button;
+    int dx, dy;
+    int old_x, old_y;
+    int click_x, click_y;
+    int nav_text_len, nav_start;
     
     /* Read all available bytes from serial port.
      * Why limit to 10 packets: We process at most 10 packets per poll to
@@ -578,33 +583,33 @@ void poll_mouse(void) {
             /* Byte 2: 00YY YYYY (Y movement, 6 bits) */
             
             /* Extract button states */
-            int left_button = (mouse_bytes[0] >> 5) & 1;
-            int right_button = (mouse_bytes[0] >> 4) & 1;
+            left_button = (mouse_bytes[0] >> 5) & 1;
+            right_button = (mouse_bytes[0] >> 4) & 1;
             
             /* Extract and combine movement values from split fields */
-            int dx = (mouse_bytes[1] & 0x3F) | ((mouse_bytes[0] & 0x03) << 6);
-            int dy = (mouse_bytes[2] & 0x3F) | ((mouse_bytes[0] & 0x0C) << 4);
+            dx = (mouse_bytes[1] & 0x3F) | ((mouse_bytes[0] & 0x03) << 6);
+            dy = (mouse_bytes[2] & 0x3F) | ((mouse_bytes[0] & 0x0C) << 4);
             
             /* Sign extend from 8-bit to full int */
             if (dx & 0x80) dx = dx - 256;
             if (dy & 0x80) dy = dy - 256;
         
         /* Store old position to check if mouse moved */
-        int old_x = mouse_x;
-        int old_y = mouse_y;
+        old_x = mouse_x;
+        old_y = mouse_y;
         
         /* Check for left click BEFORE updating position */
         /* This uses the position where the button was pressed, not where mouse moved to */
         if (left_button && !prev_left_button) {
             /* Capture click at current position before any movement */
-            int click_x = mouse_x;
-            int click_y = mouse_y;
+            click_x = mouse_x;
+            click_y = mouse_y;
             
             /* Check if click is on navigation bar */
             if (click_y == 0) {
                 /* Calculate where the buttons are - fixed positions now */
-                int nav_text_len = 27;  /* Fixed: 6 spaces/[prev] + space + "Page xx of yy [next]" */
-                int nav_start = (VGA_WIDTH - nav_text_len) / 2;
+                nav_text_len = 27;  /* Fixed: 6 spaces/[prev] + space + "Page xx of yy [next]" */
+                nav_start = (VGA_WIDTH - nav_text_len) / 2;
                 
                 /* Check for [prev] button click (only if visible) */
                 if (current_page > 0 && click_x >= nav_start && click_x < nav_start + 6) {
@@ -802,18 +807,6 @@ void poll_mouse(void) {
 static int shift_pressed = 0;
 
 int keyboard_check(void) {
-    unsigned char status;
-    unsigned char keycode;
-    
-    /* Check if keyboard data available (not mouse data) */
-    status = inb(0x64);
-    if (!(status & 1) || (status & 0x20)) {
-        return 0;  /* No keyboard data available */
-    }
-    
-    /* Read the keycode directly without blocking */
-    keycode = inb(0x60);
-    
     /* Simple scancode to ASCII - extended to handle all keys properly */
     static const char scancode_map[128] = {
         0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',  /* 0-14 */
@@ -839,6 +832,17 @@ int keyboard_check(void) {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                           /* 103-118 */
         0, 0, 0, 0, 0, 0, 0, 0, 0                                                  /* 119-127 */
     };
+    unsigned char status;
+    unsigned char keycode;
+    
+    /* Check if keyboard data available (not mouse data) */
+    status = inb(0x64);
+    if (!(status & 1) || (status & 0x20)) {
+        return 0;  /* No keyboard data available */
+    }
+    
+    /* Read the keycode directly without blocking */
+    keycode = inb(0x60);
     
     /* Check for shift press/release (left shift = 0x2A, right shift = 0x36) */
     if (keycode == 0x2A || keycode == 0x36) {
