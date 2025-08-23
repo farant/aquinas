@@ -1,4 +1,7 @@
-# Build outputs
+# Build directory
+build/
+
+# Build outputs (if any escape to root)
 *.o
 *.bin
 *.img

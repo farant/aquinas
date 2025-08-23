@@ -1,4 +1,4 @@
-# Makefile for the working OS
+# Aquinas OS Makefile
 
 # Tools
 AS = nasm
@@ -6,31 +6,52 @@ CC = x86_64-elf-gcc
 LD = x86_64-elf-ld
 QEMU = qemu-system-x86_64
 
+# Directories
+SRC_DIR = src
+BUILD_DIR = build
+BOOT_DIR = $(SRC_DIR)/boot
+KERNEL_DIR = $(SRC_DIR)/kernel
+
 # Flags
 CFLAGS = -m32 -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -O2
-LDFLAGS = -m elf_i386 -T linker.ld -nostdlib
+LDFLAGS = -m elf_i386 -T $(SRC_DIR)/linker.ld -nostdlib
 
-# Files
-BOOT_BIN = boot.bin
-KERNEL_ENTRY_OBJ = kernel_entry.o
-KERNEL_C_OBJ = kernel.o
-KERNEL_BIN = kernel.bin
-OS_IMG = aquinas.img
+# Source files
+BOOT_SRC = $(BOOT_DIR)/boot.asm
+KERNEL_ENTRY_SRC = $(KERNEL_DIR)/kernel_entry.asm
+KERNEL_C_SRC = $(KERNEL_DIR)/kernel.c
 
-all: $(OS_IMG)
+# Build files
+BOOT_BIN = $(BUILD_DIR)/boot.bin
+KERNEL_ENTRY_OBJ = $(BUILD_DIR)/kernel_entry.o
+KERNEL_C_OBJ = $(BUILD_DIR)/kernel.o
+KERNEL_BIN = $(BUILD_DIR)/kernel.bin
+OS_IMG = $(BUILD_DIR)/aquinas.img
 
-$(BOOT_BIN): boot.asm
+# Default target
+all: $(BUILD_DIR) $(OS_IMG)
+
+# Create build directory
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+# Build bootloader
+$(BOOT_BIN): $(BOOT_SRC)
 	$(AS) -f bin $< -o $@
 
-$(KERNEL_ENTRY_OBJ): kernel_entry.asm
+# Build kernel entry
+$(KERNEL_ENTRY_OBJ): $(KERNEL_ENTRY_SRC)
 	$(AS) -f elf32 $< -o $@
 
-$(KERNEL_C_OBJ): kernel.c
+# Build kernel C code
+$(KERNEL_C_OBJ): $(KERNEL_C_SRC)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(KERNEL_BIN): $(KERNEL_ENTRY_OBJ) $(KERNEL_C_OBJ) linker.ld
-	$(LD) $(LDFLAGS) $(KERNEL_ENTRY_OBJ) $(KERNEL_C_OBJ) -o $@
+# Link kernel
+$(KERNEL_BIN): $(KERNEL_ENTRY_OBJ) $(KERNEL_C_OBJ)
+	$(LD) $(LDFLAGS) $^ -o $@
 
+# Create OS image
 $(OS_IMG): $(BOOT_BIN) $(KERNEL_BIN)
 	dd if=/dev/zero of=$@ bs=512 count=2880 2>/dev/null
 	dd if=$(BOOT_BIN) of=$@ bs=512 conv=notrunc 2>/dev/null
@@ -41,13 +62,20 @@ $(OS_IMG): $(BOOT_BIN) $(KERNEL_BIN)
 	@echo "Image created: $(OS_IMG)"
 	@echo "================================"
 
+# Run the OS
 run: $(OS_IMG)
 	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M
 
+# Debug mode
 debug: $(OS_IMG)
 	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M -d int,cpu_reset -no-reboot
 
+# Clean build files
 clean:
-	rm -f *.o *.bin *.img
+	rm -rf $(BUILD_DIR)
 
-.PHONY: all run debug clean
+# Clean everything including editor files
+distclean: clean
+	rm -f *~ *.swp .DS_Store
+
+.PHONY: all run debug clean distclean
