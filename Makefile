@@ -62,9 +62,13 @@ $(OS_IMG): $(BOOT_BIN) $(KERNEL_BIN)
 	@echo "Image created: $(OS_IMG)"
 	@echo "================================"
 
-# Run the OS
+# Run the OS with both mouse and debug output
 run: $(OS_IMG)
-	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M -display cocoa,zoom-to-fit=on -full-screen -serial msmouse
+	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M -display cocoa,zoom-to-fit=on -full-screen -serial msmouse -serial stdio
+
+# Run with only debug output (no mouse)
+run-debug: $(OS_IMG)
+	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M -serial stdio
 
 # Debug mode
 debug: $(OS_IMG)

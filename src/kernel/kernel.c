@@ -347,6 +347,7 @@ static inline unsigned char inb(unsigned short port) {
 }
 
 /* Serial port definitions */
+/* COM1 - Used for mouse */
 #define COM1 0x3F8
 #define COM1_DATA (COM1 + 0)
 #define COM1_IER  (COM1 + 1)  /* Interrupt Enable Register */
@@ -354,6 +355,15 @@ static inline unsigned char inb(unsigned short port) {
 #define COM1_LCR  (COM1 + 3)  /* Line Control Register */
 #define COM1_MCR  (COM1 + 4)  /* Modem Control Register */
 #define COM1_LSR  (COM1 + 5)  /* Line Status Register */
+
+/* COM2 - Used for debug output */
+#define COM2 0x2F8
+#define COM2_DATA (COM2 + 0)
+#define COM2_IER  (COM2 + 1)
+#define COM2_FCR  (COM2 + 2)
+#define COM2_LCR  (COM2 + 3)
+#define COM2_MCR  (COM2 + 4)
+#define COM2_LSR  (COM2 + 5)
 
 /* Initialize serial port for mouse */
 void init_serial_port(void) {
@@ -386,6 +396,64 @@ void init_mouse(void) {
     }
     
     mouse_visible = 1;
+}
+
+/* Initialize COM2 for debug output */
+void init_debug_serial(void) {
+    /* Disable interrupts */
+    outb(COM2_IER, 0x00);
+    
+    /* Set baud rate to 115200 (divisor = 1) for fast debug output */
+    outb(COM2_LCR, 0x80);  /* Enable DLAB */
+    outb(COM2_DATA, 0x01); /* Set divisor low byte */
+    outb(COM2_IER, 0x00);  /* Set divisor high byte */
+    
+    /* 8 data bits, 1 stop bit, no parity */
+    outb(COM2_LCR, 0x03);
+    
+    /* Enable FIFO */
+    outb(COM2_FCR, 0xC7);
+    
+    /* Enable DTR/RTS */
+    outb(COM2_MCR, 0x03);
+}
+
+/* Check if COM2 transmit buffer is empty */
+int serial_transmit_empty(void) {
+    return inb(COM2_LSR) & 0x20;
+}
+
+/* Write a character to COM2 (debug port) */
+void serial_write_char(char c) {
+    while (serial_transmit_empty() == 0);
+    outb(COM2_DATA, c);
+}
+
+/* Write a string to COM2 (debug port) */
+void serial_write_string(const char *str) {
+    while (*str) {
+        if (*str == '\n') {
+            serial_write_char('\r');  /* Add carriage return before newline */
+        }
+        serial_write_char(*str);
+        str++;
+    }
+}
+
+/* Write a hex number to COM2 (for debugging) */
+void serial_write_hex(unsigned int value) {
+    char buffer[9];  /* 8 hex digits + null terminator */
+    const char *hex = "0123456789ABCDEF";
+    int i;
+    
+    for (i = 7; i >= 0; i--) {
+        buffer[i] = hex[value & 0xF];
+        value >>= 4;
+    }
+    buffer[8] = '\0';
+    
+    serial_write_string("0x");
+    serial_write_string(buffer);
 }
 
 /* Move cursor */
@@ -639,6 +707,15 @@ void poll_mouse(void) {
                                    page->buffer[page->highlight_end] != '\t') {
                                 page->highlight_end++;
                             }
+                            
+                            /* Debug: Log the highlighted word (via COM2) */
+                            serial_write_string("Highlighted word at position ");
+                            serial_write_hex(buf_pos);
+                            serial_write_string(" (");
+                            serial_write_hex(page->highlight_start);
+                            serial_write_string(" to ");
+                            serial_write_hex(page->highlight_end);
+                            serial_write_string(")\n");
                         }
                     } else {
                         /* Clicked beyond text - clear highlight */
@@ -836,8 +913,15 @@ void kernel_main(void) {
     /* pages[0].highlight_start = 0;
     pages[0].highlight_end = 5; */
     
-    /* Initialize mouse */
+    /* Initialize debug serial port (COM2) */
+    init_debug_serial();
+    serial_write_string("\n\nAquinas OS started!\n");
+    serial_write_string("COM2 debug port initialized.\n");
+    
+    /* Initialize mouse (uses COM1) */
     init_mouse();
+    serial_write_string("Mouse initialized on COM1.\n");
+    serial_write_string("Text editor ready.\n");
     
     /* Start with empty screen, ready for typing */
     refresh_screen();
