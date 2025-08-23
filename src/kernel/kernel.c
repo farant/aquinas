@@ -1,5 +1,8 @@
 /* AquinasOS Text Editor */
 
+#include "io.h"
+#include "serial.h"
+
 #define VGA_BUFFER ((unsigned short*)0xB8000)
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 25
@@ -31,10 +34,7 @@ int mouse_visible = 0;     /* Is mouse cursor visible */
 void refresh_screen(void);
 void draw_nav_bar(void);
 
-/* Write a byte to port */
-static inline void outb(unsigned short port, unsigned char val) {
-    __asm__ volatile ("outb %0, %1" : : "a"(val), "dN"(port));
-}
+/* Port I/O functions now in io.h */
 
 /* Switch to previous page */
 void prev_page(void) {
@@ -339,51 +339,9 @@ void clear_screen(void) {
     update_cursor();
 }
 
-/* Read a byte from port */
-static inline unsigned char inb(unsigned short port) {
-    unsigned char ret;
-    __asm__ volatile ("inb %1, %0" : "=a"(ret) : "dN"(port));
-    return ret;
-}
+/* Port I/O functions now in io.h */
 
-/* Serial port definitions */
-/* COM1 - Used for mouse */
-#define COM1 0x3F8
-#define COM1_DATA (COM1 + 0)
-#define COM1_IER  (COM1 + 1)  /* Interrupt Enable Register */
-#define COM1_FCR  (COM1 + 2)  /* FIFO Control Register */
-#define COM1_LCR  (COM1 + 3)  /* Line Control Register */
-#define COM1_MCR  (COM1 + 4)  /* Modem Control Register */
-#define COM1_LSR  (COM1 + 5)  /* Line Status Register */
-
-/* COM2 - Used for debug output */
-#define COM2 0x2F8
-#define COM2_DATA (COM2 + 0)
-#define COM2_IER  (COM2 + 1)
-#define COM2_FCR  (COM2 + 2)
-#define COM2_LCR  (COM2 + 3)
-#define COM2_MCR  (COM2 + 4)
-#define COM2_LSR  (COM2 + 5)
-
-/* Initialize serial port for mouse */
-void init_serial_port(void) {
-    /* Disable interrupts */
-    outb(COM1_IER, 0x00);
-    
-    /* Set baud rate to 1200 (divisor = 96) for serial mouse */
-    outb(COM1_LCR, 0x80);  /* Enable DLAB */
-    outb(COM1_DATA, 0x60); /* Set divisor low byte (96) */
-    outb(COM1_IER, 0x00);  /* Set divisor high byte (0) */
-    
-    /* 7 data bits, 1 stop bit, no parity (Microsoft mouse protocol) */
-    outb(COM1_LCR, 0x02);
-    
-    /* Enable FIFO */
-    outb(COM1_FCR, 0xC7);
-    
-    /* Enable DTR/RTS to power the mouse */
-    outb(COM1_MCR, 0x03);
-}
+/* Serial port functions are now in serial.c */
 
 /* Initialize serial mouse */
 void init_mouse(void) {
@@ -396,64 +354,6 @@ void init_mouse(void) {
     }
     
     mouse_visible = 1;
-}
-
-/* Initialize COM2 for debug output */
-void init_debug_serial(void) {
-    /* Disable interrupts */
-    outb(COM2_IER, 0x00);
-    
-    /* Set baud rate to 115200 (divisor = 1) for fast debug output */
-    outb(COM2_LCR, 0x80);  /* Enable DLAB */
-    outb(COM2_DATA, 0x01); /* Set divisor low byte */
-    outb(COM2_IER, 0x00);  /* Set divisor high byte */
-    
-    /* 8 data bits, 1 stop bit, no parity */
-    outb(COM2_LCR, 0x03);
-    
-    /* Enable FIFO */
-    outb(COM2_FCR, 0xC7);
-    
-    /* Enable DTR/RTS */
-    outb(COM2_MCR, 0x03);
-}
-
-/* Check if COM2 transmit buffer is empty */
-int serial_transmit_empty(void) {
-    return inb(COM2_LSR) & 0x20;
-}
-
-/* Write a character to COM2 (debug port) */
-void serial_write_char(char c) {
-    while (serial_transmit_empty() == 0);
-    outb(COM2_DATA, c);
-}
-
-/* Write a string to COM2 (debug port) */
-void serial_write_string(const char *str) {
-    while (*str) {
-        if (*str == '\n') {
-            serial_write_char('\r');  /* Add carriage return before newline */
-        }
-        serial_write_char(*str);
-        str++;
-    }
-}
-
-/* Write a hex number to COM2 (for debugging) */
-void serial_write_hex(unsigned int value) {
-    char buffer[9];  /* 8 hex digits + null terminator */
-    const char *hex = "0123456789ABCDEF";
-    int i;
-    
-    for (i = 7; i >= 0; i--) {
-        buffer[i] = hex[value & 0xF];
-        value >>= 4;
-    }
-    buffer[8] = '\0';
-    
-    serial_write_string("0x");
-    serial_write_string(buffer);
 }
 
 /* Move cursor */
