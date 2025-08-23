@@ -1,5 +1,36 @@
 Don't need to delete any .stml files
 
+## AI Suggestions
+
+When you have ideas for improvements or things to work on beyond what the user has explicitly requested, add them to `AI_SUGGESTIONS.md`. This file serves as a place to capture potential enhancements you've noticed while working on the codebase.
+
+Format suggestions clearly with:
+- A brief title
+- Description of the improvement
+- Why it would be beneficial
+- Rough implementation approach (optional)
+
+If the user says they accept a suggestion, move it to `AI_SUGGESTIONS_ACCEPTED.md` to track approved ideas that can be worked on.
+
+## Bug Tracking
+
+When you discover bugs while working on the codebase, document them in `BUGS.md`. This helps track known issues that need to be addressed.
+
+Format bugs clearly with:
+- A brief title
+- Description of the bug and how to reproduce it
+- Expected vs actual behavior
+- Any relevant code locations
+- Potential fix approach (if known)
+
+Once a bug is fixed, move it to the end of `BUGS_FIXED.md` with:
+- The original bug description
+- How it was fixed
+- Date fixed (if known)
+- Any lessons learned
+
+This creates a historical record of issues and their resolutions.
+
 ## Code Style & Comments
 
 ### Comment Philosophy

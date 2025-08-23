@@ -45,6 +45,7 @@ This document outlines the long-term vision and goals for Aquinas OS.
 - Implement modal editing (normal and insert modes)
 - Support common vim navigation (hjkl, w, b, e, gg, G, etc.)
 - Maintain compatibility with existing mouse support
+- Ideally support ctrl-[ and fd (typed in sequence quickly) as ways to exit insert mode
 
 ### 7. Object Database Filesystem
 - Going to try not having files!
@@ -68,9 +69,27 @@ This document outlines the long-term vision and goals for Aquinas OS.
 - Useful for different kind of views
 - Possibly panes will have their own pagination structure
 
+## Data Storage & Memory
+
+### 10. Event-Sourced Filesystem
+- Implement append-only data storage
+- All changes are events that get appended, never modified
+- Enables perfect history and undo/redo
+- No data is ever lost or overwritten
+- Can replay events to reach any previous state
+- Inspired by event sourcing patterns in distributed systems
+
+### 11. Global String Interning
+- Experiment with OS-level string interning
+- All identical strings share the same memory
+- Reduces memory usage for repeated text
+- Enables fast string comparison (pointer equality)
+- Could enable interesting text analysis features
+- Foundation for content-addressable storage
+
 ## Networking & Communication
 
-### 10. Simple Network Protocol
+### 12. Simple Network Protocol
 - Design a minimal protocol for host communication
 - Not necessarily TCP/IP - could be simpler serial-based protocol
 - Support sending and receiving text/data from host system
