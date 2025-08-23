@@ -12,6 +12,13 @@ int buffer_length = 0;     /* Current length of text in buffer */
 int cursor_pos = 0;        /* Cursor position in the buffer */
 int screen_offset = 0;     /* First character shown on screen */
 
+/* Mouse state */
+int mouse_x = 40;          /* Mouse X position (0-79) */
+int mouse_y = 12;          /* Mouse Y position (0-24) */
+int mouse_visible = 0;     /* Is mouse cursor visible */
+int highlight_start = -1;  /* Start of highlighted word */
+int highlight_end = -1;    /* End of highlighted word */
+
 /* Write a byte to port */
 static inline void outb(unsigned short port, unsigned char val) {
     __asm__ volatile ("outb %0, %1" : : "a"(val), "dN"(port));
@@ -59,33 +66,55 @@ void refresh_screen(void) {
     int buf_pos = screen_offset;
     
     while (screen_pos < VGA_WIDTH * VGA_HEIGHT) {
+        unsigned short color = VGA_COLOR;
+        
+        /* Check if this is the mouse position */
+        if (mouse_visible && screen_pos == (mouse_y * VGA_WIDTH + mouse_x)) {
+            color = 0x2F00;  /* Green background for mouse cursor */
+        }
+        
+        /* Check if this position is highlighted */
+        if (highlight_start >= 0 && buf_pos >= highlight_start && buf_pos < highlight_end) {
+            color = 0x4F00;  /* Red background for highlighted text */
+        }
+        
         if (buf_pos < buffer_length) {
             char c = text_buffer[buf_pos];
             if (c == '\n') {
                 /* Fill rest of line with spaces */
                 int col = screen_pos % VGA_WIDTH;
                 while (col < VGA_WIDTH && screen_pos < VGA_WIDTH * VGA_HEIGHT) {
-                    VGA_BUFFER[screen_pos++] = VGA_COLOR | ' ';
+                    /* Check mouse position for each space */
+                    if (mouse_visible && screen_pos == (mouse_y * VGA_WIDTH + mouse_x)) {
+                        VGA_BUFFER[screen_pos++] = 0x2F00 | ' ';
+                    } else {
+                        VGA_BUFFER[screen_pos++] = VGA_COLOR | ' ';
+                    }
                     col++;
                 }
                 buf_pos++;
             } else if (c == '\t') {
                 /* Display tab as two spaces */
-                if (screen_pos < VGA_WIDTH * VGA_HEIGHT) {
-                    VGA_BUFFER[screen_pos++] = VGA_COLOR | ' ';
-                }
-                if (screen_pos < VGA_WIDTH * VGA_HEIGHT) {
-                    VGA_BUFFER[screen_pos++] = VGA_COLOR | ' ';
+                for (int i = 0; i < 2 && screen_pos < VGA_WIDTH * VGA_HEIGHT; i++) {
+                    unsigned short tab_color = color;
+                    if (mouse_visible && screen_pos == (mouse_y * VGA_WIDTH + mouse_x)) {
+                        tab_color = 0x2F00;
+                    }
+                    VGA_BUFFER[screen_pos++] = tab_color | ' ';
                 }
                 buf_pos++;
             } else {
                 /* Regular character */
-                VGA_BUFFER[screen_pos++] = VGA_COLOR | c;
+                VGA_BUFFER[screen_pos++] = color | c;
                 buf_pos++;
             }
         } else {
             /* Past end of buffer, fill with spaces */
-            VGA_BUFFER[screen_pos++] = VGA_COLOR | ' ';
+            if (mouse_visible && screen_pos == (mouse_y * VGA_WIDTH + mouse_x)) {
+                VGA_BUFFER[screen_pos++] = 0x2F00 | ' ';
+            } else {
+                VGA_BUFFER[screen_pos++] = VGA_COLOR | ' ';
+            }
         }
     }
     update_cursor();
@@ -136,6 +165,48 @@ static inline unsigned char inb(unsigned short port) {
     unsigned char ret;
     __asm__ volatile ("inb %1, %0" : "=a"(ret) : "dN"(port));
     return ret;
+}
+
+/* Serial port definitions */
+#define COM1 0x3F8
+#define COM1_DATA (COM1 + 0)
+#define COM1_IER  (COM1 + 1)  /* Interrupt Enable Register */
+#define COM1_FCR  (COM1 + 2)  /* FIFO Control Register */
+#define COM1_LCR  (COM1 + 3)  /* Line Control Register */
+#define COM1_MCR  (COM1 + 4)  /* Modem Control Register */
+#define COM1_LSR  (COM1 + 5)  /* Line Status Register */
+
+/* Initialize serial port for mouse */
+void init_serial_port(void) {
+    /* Disable interrupts */
+    outb(COM1_IER, 0x00);
+    
+    /* Set baud rate to 1200 (divisor = 96) for serial mouse */
+    outb(COM1_LCR, 0x80);  /* Enable DLAB */
+    outb(COM1_DATA, 0x60); /* Set divisor low byte (96) */
+    outb(COM1_IER, 0x00);  /* Set divisor high byte (0) */
+    
+    /* 7 data bits, 1 stop bit, no parity (Microsoft mouse protocol) */
+    outb(COM1_LCR, 0x02);
+    
+    /* Enable FIFO */
+    outb(COM1_FCR, 0xC7);
+    
+    /* Enable DTR/RTS to power the mouse */
+    outb(COM1_MCR, 0x03);
+}
+
+/* Initialize serial mouse */
+void init_mouse(void) {
+    init_serial_port();
+    
+    /* Send 'M' to identify as Microsoft mouse */
+    /* Some mice auto-detect, others need this */
+    while (inb(COM1_LSR) & 0x01) {
+        inb(COM1_DATA);  /* Clear any pending data */
+    }
+    
+    mouse_visible = 1;
 }
 
 /* Move cursor */
@@ -220,11 +291,132 @@ void move_cursor_down(void) {
     refresh_screen();
 }
 
-/* Keyboard handler with special keys */
-int keyboard_get_scancode(void) {
+/* Old blocking keyboard handler - kept for reference but not used */
+/* keyboard_get_scancode was replaced by non-blocking keyboard_check */
+
+/* Poll for serial mouse data (non-blocking) */
+void poll_mouse(void) {
+    static unsigned char mouse_bytes[3];
+    static int byte_num = 0;
+    unsigned char data;
+    
+    /* Check if serial data is available */
+    if (!(inb(COM1_LSR) & 0x01)) return;
+    
+    data = inb(COM1_DATA);
+    
+    /* Microsoft protocol: First byte has bit 6 set */
+    if (data & 0x40) {
+        byte_num = 0;  /* Start of new packet */
+    }
+    
+    if (byte_num < 3) {
+        mouse_bytes[byte_num++] = data;
+    }
+    
+    if (byte_num == 3) {
+        /* Parse Microsoft mouse packet */
+        /* Byte 0: 01LR YYyy XXxx (L=left button, R=right button) */
+        /* Byte 1: 00XX XXXX (X movement) */
+        /* Byte 2: 00YY YYYY (Y movement) */
+        
+        int left_button = (mouse_bytes[0] >> 5) & 1;
+        int right_button = (mouse_bytes[0] >> 4) & 1;
+        
+        /* Combine the movement bits */
+        int dx = ((mouse_bytes[0] & 0x03) << 6) | (mouse_bytes[1] & 0x3F);
+        int dy = ((mouse_bytes[0] & 0x0C) << 4) | (mouse_bytes[2] & 0x3F);
+        
+        /* Sign extend for negative values */
+        if (dx > 127) dx -= 256;
+        if (dy > 127) dy -= 256;
+        
+        /* Store old position to check if mouse moved */
+        int old_x = mouse_x;
+        int old_y = mouse_y;
+        
+        /* Update position (scale movement for text mode) */
+        mouse_x += dx / 8;
+        mouse_y += dy / 8;  /* Serial mouse Y matches screen direction */
+        
+        /* Clamp to screen bounds */
+        if (mouse_x < 0) mouse_x = 0;
+        if (mouse_x >= VGA_WIDTH) mouse_x = VGA_WIDTH - 1;
+        if (mouse_y < 0) mouse_y = 0;
+        if (mouse_y >= VGA_HEIGHT) mouse_y = VGA_HEIGHT - 1;
+        
+        /* Refresh if mouse moved */
+        if (mouse_x != old_x || mouse_y != old_y) {
+            refresh_screen();
+        }
+        
+        /* Check for left click */
+        if (left_button) {
+            /* Find what position in buffer corresponds to screen position */
+            int screen_pos = mouse_y * VGA_WIDTH + mouse_x;
+            int buf_pos = screen_offset;
+            int curr_screen_pos = 0;
+            
+            /* Map screen position to buffer position */
+            while (curr_screen_pos < screen_pos && buf_pos < buffer_length) {
+                if (text_buffer[buf_pos] == '\n') {
+                    int col = curr_screen_pos % VGA_WIDTH;
+                    curr_screen_pos += (VGA_WIDTH - col);
+                } else if (text_buffer[buf_pos] == '\t') {
+                    curr_screen_pos += 2;
+                } else {
+                    curr_screen_pos++;
+                }
+                buf_pos++;
+            }
+            
+            /* Find word boundaries */
+            if (buf_pos < buffer_length) {
+                /* Find start of word */
+                highlight_start = buf_pos;
+                while (highlight_start > 0 && 
+                       text_buffer[highlight_start - 1] != ' ' &&
+                       text_buffer[highlight_start - 1] != '\n' &&
+                       text_buffer[highlight_start - 1] != '\t') {
+                    highlight_start--;
+                }
+                
+                /* Find end of word */
+                highlight_end = buf_pos;
+                while (highlight_end < buffer_length &&
+                       text_buffer[highlight_end] != ' ' &&
+                       text_buffer[highlight_end] != '\n' &&
+                       text_buffer[highlight_end] != '\t') {
+                    highlight_end++;
+                }
+                
+                /* If clicked on whitespace, clear highlight */
+                if (highlight_start == highlight_end) {
+                    highlight_start = -1;
+                    highlight_end = -1;
+                }
+                
+                /* Refresh to show highlight change */
+                refresh_screen();
+            }
+        }
+    }
+}
+
+/* Non-blocking keyboard check */
+int keyboard_check(void) {
+    static int shift_pressed = 0;
     unsigned char status;
     unsigned char keycode;
-    static int shift_pressed = 0;
+    
+    /* Check if keyboard data available (not mouse data) */
+    status = inb(0x64);
+    if (!(status & 1) || (status & 0x20)) {
+        return 0;  /* No keyboard data available */
+    }
+    
+    /* Read the keycode directly without blocking */
+    keycode = inb(0x60);
     
     /* Simple scancode to ASCII for testing - only first 60 entries matter */
     static const char scancode_map[60] = {
@@ -244,51 +436,44 @@ int keyboard_get_scancode(void) {
         '*', 0, ' '
     };
     
-    while (1) {
-        /* Wait for key event */
-        do {
-            status = inb(0x64);
-        } while (!(status & 1));
+    /* Check for shift press/release (left shift = 0x2A, right shift = 0x36) */
+    if (keycode == 0x2A || keycode == 0x36) {
+        shift_pressed = 1;
+        return 0;  /* Don't return anything for shift press */
+    } else if (keycode == 0xAA || keycode == 0xB6) {  /* Shift release */
+        shift_pressed = 0;
+        return 0;
+    }
+    
+    /* Skip key release events (high bit set) */
+    if (keycode & 0x80) {
+        return 0;
+    }
+    
+    /* Special keys - return negative values */
+    /* Arrow keys: Up=0x48, Left=0x4B, Right=0x4D, Down=0x50 */
+    if (keycode == 0x48) return -1;  /* Up arrow */
+    if (keycode == 0x50) return -2;  /* Down arrow */
+    if (keycode == 0x4B) return -3;  /* Left arrow */
+    if (keycode == 0x4D) return -4;  /* Right arrow */
+    
+    /* Process regular key press */
+    if (keycode < 60) {  /* Make sure we're within array bounds */
+        char c;
         
-        keycode = inb(0x60);
-        
-        /* Check for shift press/release (left shift = 0x2A, right shift = 0x36) */
-        if (keycode == 0x2A || keycode == 0x36) {
-            shift_pressed = 1;
-            continue;  /* Get next key */
-        } else if (keycode == 0xAA || keycode == 0xB6) {  /* Shift release */
-            shift_pressed = 0;
-            continue;  /* Get next key */
+        if (shift_pressed) {
+            c = scancode_map_shift[(int)keycode];
+        } else {
+            c = scancode_map[(int)keycode];
         }
         
-        /* Skip key release events (high bit set) */
-        if (keycode & 0x80) {
-            continue;
-        }
-        
-        /* Special keys - return negative values */
-        /* Arrow keys: Up=0x48, Left=0x4B, Right=0x4D, Down=0x50 */
-        if (keycode == 0x48) return -1;  /* Up arrow */
-        if (keycode == 0x50) return -2;  /* Down arrow */
-        if (keycode == 0x4B) return -3;  /* Left arrow */
-        if (keycode == 0x4D) return -4;  /* Right arrow */
-        
-        /* Process regular key press */
-        if (keycode < 60) {  /* Make sure we're within array bounds */
-            char c;
-            
-            if (shift_pressed) {
-                c = scancode_map_shift[(int)keycode];
-            } else {
-                c = scancode_map[(int)keycode];
-            }
-            
-            /* Return character (positive value) */
-            if (c != 0) {
-                return (int)c;
-            }
+        /* Return character (positive value) */
+        if (c != 0) {
+            return (int)c;
         }
     }
+    
+    return 0;
 }
 
 /* Kernel entry point */
@@ -302,12 +487,19 @@ void kernel_main(void) {
     cursor_pos = 0;
     screen_offset = 0;
     
+    /* Initialize mouse */
+    init_mouse();
+    
     /* Start with empty screen, ready for typing */
     refresh_screen();
     
-    /* Main editor loop */
+    /* Main editor loop - non-blocking */
     while (1) {
-        key = keyboard_get_scancode();
+        /* Poll for mouse data (will refresh screen if mouse moves) */
+        poll_mouse();
+        
+        /* Check for keyboard input (non-blocking) */
+        key = keyboard_check();
         
         if (key == -1) {  /* Up arrow */
             move_cursor_up();
