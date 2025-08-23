@@ -1,0 +1,33 @@
+# Build outputs
+*.o
+*.bin
+*.img
+*.iso
+*.elf
+
+# Editor files
+*.swp
+*.swo
+*~
+.DS_Store
+.vscode/
+.idea/
+
+# Debug files
+*.log
+*.dump
+core
+
+# Temporary files
+*.tmp
+*.bak
+*.old
+
+# Build directories
+build/
+isodir/
+iso/
+
+# QEMU files
+*.qcow2
+*.vmdk

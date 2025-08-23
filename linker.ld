@@ -1,5 +1,3 @@
-/* linker.ld - Linker script for the kernel */
-
 OUTPUT_FORMAT("binary")
 ENTRY(_start)
 
@@ -21,5 +19,6 @@ SECTIONS
     
     .bss : {
         *(.bss)
+        *(COMMON)
     }
 }
