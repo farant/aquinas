@@ -4,20 +4,28 @@ This document outlines the long-term vision and goals for Aquinas OS.
 
 ## Code Quality & Testing
 
-### 1. Well-Commented Code
+### 1. C89 Standard Compliance
+- Write all C code in ANSI C89/C90 standard
+- No C99 features (no inline variable declarations, no // comments in C files)
+- Maximum portability and compatibility
+- Forces cleaner, more thoughtful code structure
+- Declare all variables at the beginning of blocks
+- Use /* */ style comments in C code
+
+### 2. Well-Commented Code
 - Follow Antirez's comment philosophy (see literature/antirez-comment-philosophy.md)
 - Include design comments explaining architecture decisions
 - Add teacher comments for complex algorithms and protocols
 - Document the "why" behind non-obvious implementation choices
 - Use guide comments to improve code readability
 
-### 2. Comprehensive Testing
+### 3. Comprehensive Testing
 - Implement unit tests for individual modules
 - Add integration tests to catch regressions
 - Test edge cases and error conditions
 - Ensure tests run in the build process to catch bugs early
 
-### 3. Modular Architecture
+### 4. Modular Architecture
 - Break code into testable, independent modules
 - Separate concerns (e.g., rendering, input handling, data management)
 - Use clear interfaces between modules
@@ -25,7 +33,7 @@ This document outlines the long-term vision and goals for Aquinas OS.
 
 ## Performance & Rendering
 
-### 4. Efficient Rendering
+### 5. Efficient Rendering
 - Implement differential rendering - only update changed characters
 - Track dirty regions to minimize VGA buffer writes
 - Optimize for common editing patterns (typing, backspace, cursor movement)
@@ -33,7 +41,7 @@ This document outlines the long-term vision and goals for Aquinas OS.
 
 ## User Interface & Interaction
 
-### 5. Pagination-Only Display
+### 6. Pagination-Only Display
 - No scrolling - only pagination for all content
 - Fixed-width fonts only (no variable width fonts)
 - Scrolling and variable width fonts were a mistake
@@ -41,13 +49,13 @@ This document outlines the long-term vision and goals for Aquinas OS.
 - Pagination provides better object permanence - content stays where you put it
 - Every page has a fixed position, making navigation predictable
 
-### 6. Vim Key Bindings
+### 7. Vim Key Bindings
 - Implement modal editing (normal and insert modes)
 - Support common vim navigation (hjkl, w, b, e, gg, G, etc.)
 - Maintain compatibility with existing mouse support
 - Ideally support ctrl-[ and fd (typed in sequence quickly) as ways to exit insert mode
 
-### 7. Object Database Filesystem
+### 8. Object Database Filesystem
 - Going to try not having files!
 - Move beyond traditional file/directory hierarchy
 - Implement object-based storage with relationships
@@ -55,14 +63,14 @@ This document outlines the long-term vision and goals for Aquinas OS.
 - Allow queries and graph-like navigation between objects
 - Inspired by object databases and graph databases
 
-### 8. Executable Text Commands
+### 9. Executable Text Commands
 - Implement clickable/executable commands in the editor (like Acme/Oberon)
 - Shift click to execute text as commands
 - Commands can operate on selected text or current context
 - Extensible command system for user-defined operations
 - Text becomes the interface for system control
 
-### 9. Split Pane Support
+### 10. Split Pane Support
 - Allow horizontal splitting of pages into two panes
 - Never going to use scrolling! Only pagination
 - Commands to split, unsplit, and navigate between panes
@@ -71,7 +79,7 @@ This document outlines the long-term vision and goals for Aquinas OS.
 
 ## Data Storage & Memory
 
-### 10. Event-Sourced Filesystem
+### 11. Event-Sourced Filesystem
 - Implement append-only data storage
 - All changes are events that get appended, never modified
 - Enables perfect history and undo/redo
@@ -79,7 +87,7 @@ This document outlines the long-term vision and goals for Aquinas OS.
 - Can replay events to reach any previous state
 - Inspired by event sourcing patterns in distributed systems
 
-### 11. Global String Interning
+### 12. Global String Interning
 - Experiment with OS-level string interning
 - All identical strings share the same memory
 - Reduces memory usage for repeated text
@@ -89,7 +97,7 @@ This document outlines the long-term vision and goals for Aquinas OS.
 
 ## Networking & Communication
 
-### 12. Simple Network Protocol
+### 13. Simple Network Protocol
 - Design a minimal protocol for host communication
 - Not necessarily TCP/IP - could be simpler serial-based protocol
 - Support sending and receiving text/data from host system
