@@ -11,6 +11,8 @@ typedef struct {
     char buffer[((VGA_HEIGHT - 1) * VGA_WIDTH)];  /* One screen worth of text */
     int length;        /* Current length of text in this page */
     int cursor_pos;    /* Cursor position in this page */
+    int highlight_start;  /* Start of highlighted text in this page */
+    int highlight_end;    /* End of highlighted text in this page */
 } Page;
 
 /* Page management */
@@ -24,8 +26,6 @@ int total_pages = 1;
 int mouse_x = 40;          /* Mouse X position (0-79) */
 int mouse_y = 12;          /* Mouse Y position (0-24) */
 int mouse_visible = 0;     /* Is mouse cursor visible */
-int highlight_start = -1;  /* Start of highlighted word */
-int highlight_end = -1;    /* End of highlighted word */
 
 /* Forward declarations */
 void refresh_screen(void);
@@ -203,8 +203,10 @@ void refresh_screen(void) {
             color = 0x2F00;  /* Green background for mouse cursor */
         }
         
-        /* Check if this position is highlighted */
-        if (highlight_start >= 0 && buf_pos >= highlight_start && buf_pos < highlight_end) {
+        /* Check if this position is highlighted (using per-page highlight) */
+        if (page->highlight_end > 0 && page->highlight_end <= page->length &&
+            page->highlight_start >= 0 && page->highlight_start < page->highlight_end &&
+            buf_pos >= page->highlight_start && buf_pos < page->highlight_end) {
             color = 0x4F00;  /* Red background for highlighted text */
         }
         
@@ -557,14 +559,95 @@ void poll_mouse(void) {
             }
             /* Normal text click handling */
             else {
-                /* Word highlighting disabled for now with new page structure */
-                /* Clear any existing highlight */
-                highlight_start = -1;
-                highlight_end = -1;
+                /* Get current page */
+                Page *page = &pages[current_page];
                 
-                /* TODO: Reimplement click-to-position cursor and word highlighting */
-                
-                refresh_screen();
+                int click_y = mouse_y - 1;
+                if (click_y >= 0 && click_y < VGA_HEIGHT - 1) {
+                    int click_x = mouse_x;
+                    
+                    /* Calculate buffer position from screen coordinates */
+                    /* Simplified approach: directly calculate position */
+                    int buf_pos = 0;
+                    int line = 0;
+                    int col = 0;
+                    
+                    /* Scan through buffer to find the clicked position */
+                    for (buf_pos = 0; buf_pos < page->length; buf_pos++) {
+                        /* Check if we reached the clicked position */
+                        if (line == click_y && col == click_x) {
+                            break;
+                        }
+                        
+                        /* Handle newlines */
+                        if (page->buffer[buf_pos] == '\n') {
+                            /* If we're on the target line but past the click column, we clicked past line end */
+                            if (line == click_y) {
+                                break;
+                            }
+                            line++;
+                            col = 0;
+                        } else if (page->buffer[buf_pos] == '\t') {
+                            /* Tabs take up 2 visual spaces */
+                            col += 2;
+                            /* Handle line wrap */
+                            if (col >= VGA_WIDTH) {
+                                line++;
+                                col = 0;
+                            }
+                        } else {
+                            /* Normal character - move to next column */
+                            col++;
+                            /* Handle line wrap */
+                            if (col >= VGA_WIDTH) {
+                                line++;
+                                col = 0;
+                            }
+                        }
+                        
+                        /* Stop if we've gone past the target line */
+                        if (line > click_y) {
+                            break;
+                        }
+                    }
+                    
+                    /* Check if click is within text */
+                    if (buf_pos >= 0 && buf_pos < page->length) {
+                        /* Check if clicked on a word or whitespace */
+                        char clicked_char = page->buffer[buf_pos];
+                        if (clicked_char == ' ' || clicked_char == '\n' || clicked_char == '\t') {
+                            /* Clicked on whitespace - clear highlight */
+                            page->highlight_start = 0;
+                            page->highlight_end = 0;
+                        } else {
+                            /* Clicked on a word - find boundaries */
+                            page->highlight_start = buf_pos;
+                            page->highlight_end = buf_pos + 1;  /* Start with at least one char */
+                            
+                            /* Find start of word */
+                            while (page->highlight_start > 0 && 
+                                   page->buffer[page->highlight_start - 1] != ' ' &&
+                                   page->buffer[page->highlight_start - 1] != '\n' &&
+                                   page->buffer[page->highlight_start - 1] != '\t') {
+                                page->highlight_start--;
+                            }
+                            
+                            /* Find end of word */
+                            while (page->highlight_end < page->length &&
+                                   page->buffer[page->highlight_end] != ' ' &&
+                                   page->buffer[page->highlight_end] != '\n' &&
+                                   page->buffer[page->highlight_end] != '\t') {
+                                page->highlight_end++;
+                            }
+                        }
+                    } else {
+                        /* Clicked beyond text - clear highlight */
+                        page->highlight_start = 0;
+                        page->highlight_end = 0;
+                    }
+                    
+                    refresh_screen();
+                }
             }  /* End of else (normal text click) */
         }
         
@@ -748,6 +831,10 @@ void kernel_main(void) {
     /* Initialize first page */
     pages[0].length = 0;
     pages[0].cursor_pos = 0;
+    
+    /* DEBUG: Test if highlighting works at all */
+    /* pages[0].highlight_start = 0;
+    pages[0].highlight_end = 5; */
     
     /* Initialize mouse */
     init_mouse();
