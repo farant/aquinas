@@ -124,15 +124,54 @@ void refresh_screen(void) {
 void insert_char(char c) {
     if (buffer_length >= BUFFER_SIZE - 1) return; /* Buffer full */
     
-    /* Shift everything after cursor forward */
-    for (int i = buffer_length; i > cursor_pos; i--) {
-        text_buffer[i] = text_buffer[i - 1];
+    /* If inserting newline, handle auto-indentation */
+    if (c == '\n') {
+        /* Find the start of the current line */
+        int line_start = cursor_pos;
+        while (line_start > 0 && text_buffer[line_start - 1] != '\n') {
+            line_start--;
+        }
+        
+        /* Count leading spaces/tabs on current line */
+        int indent_count = 0;
+        int check_pos = line_start;
+        while (check_pos < buffer_length && 
+               (text_buffer[check_pos] == ' ' || text_buffer[check_pos] == '\t')) {
+            indent_count++;
+            check_pos++;
+        }
+        
+        /* Make sure we have enough space for newline + indentation */
+        if (buffer_length + 1 + indent_count >= BUFFER_SIZE - 1) return;
+        
+        /* Shift everything after cursor forward to make room for newline + indentation */
+        for (int i = buffer_length + indent_count; i > cursor_pos; i--) {
+            text_buffer[i] = text_buffer[i - 1 - indent_count];
+        }
+        
+        /* Insert newline */
+        text_buffer[cursor_pos] = '\n';
+        cursor_pos++;
+        buffer_length++;
+        
+        /* Copy indentation from current line */
+        for (int i = 0; i < indent_count; i++) {
+            text_buffer[cursor_pos] = text_buffer[line_start + i];
+            cursor_pos++;
+            buffer_length++;
+        }
+    } else {
+        /* Normal character insertion */
+        /* Shift everything after cursor forward */
+        for (int i = buffer_length; i > cursor_pos; i--) {
+            text_buffer[i] = text_buffer[i - 1];
+        }
+        
+        /* Insert the character */
+        text_buffer[cursor_pos] = c;
+        cursor_pos++;
+        buffer_length++;
     }
-    
-    /* Insert the character */
-    text_buffer[cursor_pos] = c;
-    cursor_pos++;
-    buffer_length++;
     
     refresh_screen();
 }
