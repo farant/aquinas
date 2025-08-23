@@ -707,8 +707,14 @@ int keyboard_check(void) {
     /* Arrow keys: Up=0x48, Left=0x4B, Right=0x4D, Down=0x50 */
     if (keycode == 0x48) return -1;  /* Up arrow */
     if (keycode == 0x50) return -2;  /* Down arrow */
-    if (keycode == 0x4B) return -3;  /* Left arrow */
-    if (keycode == 0x4D) return -4;  /* Right arrow */
+    if (keycode == 0x4B) {
+        if (shift_pressed) return -5;  /* Shift+Left = Previous page */
+        return -3;  /* Left arrow */
+    }
+    if (keycode == 0x4D) {
+        if (shift_pressed) return -6;  /* Shift+Right = Next page */
+        return -4;  /* Right arrow */
+    }
     
     /* Process regular key press */
     if (keycode < 128) {  /* Make sure we're within array bounds */
@@ -765,6 +771,10 @@ void kernel_main(void) {
             move_cursor_left();
         } else if (key == -4) {  /* Right arrow */
             move_cursor_right();
+        } else if (key == -5) {  /* Shift+Left = Previous page */
+            prev_page();
+        } else if (key == -6) {  /* Shift+Right = Next page */
+            next_page();
         } else if (key == '\b') {  /* Backspace */
             delete_char();
         } else if (key == '\t') {  /* Tab - insert actual tab character */
