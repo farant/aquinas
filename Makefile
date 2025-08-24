@@ -51,9 +51,9 @@ $(BUILD_DIR)/%.o: $(KERNEL_DIR)/%.c
 $(KERNEL_BIN): $(KERNEL_ENTRY_OBJ) $(KERNEL_C_OBJS)
 	$(LD) $(LDFLAGS) $^ -o $@
 
-# Create OS image
+# Create OS image (10MB IDE disk instead of 1.44MB floppy)
 $(OS_IMG): $(BOOT_BIN) $(KERNEL_BIN)
-	dd if=/dev/zero of=$@ bs=512 count=2880 2>/dev/null
+	dd if=/dev/zero of=$@ bs=1M count=10 2>/dev/null
 	dd if=$(BOOT_BIN) of=$@ bs=512 conv=notrunc 2>/dev/null
 	dd if=$(KERNEL_BIN) of=$@ bs=512 seek=1 conv=notrunc 2>/dev/null
 	@echo "================================"
@@ -62,29 +62,29 @@ $(OS_IMG): $(BOOT_BIN) $(KERNEL_BIN)
 	@echo "Image created: $(OS_IMG)"
 	@echo "================================"
 
-# Run the OS with both mouse and debug output
+# Run the OS with both mouse and debug output (IDE disk)
 run: $(OS_IMG)
-	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M -display cocoa,zoom-to-fit=on -full-screen -serial msmouse -serial stdio
+	$(QEMU) -drive file=$(OS_IMG),format=raw -m 128M -display cocoa,zoom-to-fit=on -full-screen -serial msmouse -serial stdio
 
 # Run with only debug output (no mouse)
 run-debug: $(OS_IMG)
-	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M -serial stdio
+	$(QEMU) -drive file=$(OS_IMG),format=raw -m 128M -serial stdio
 
 # Debug mode - shows interrupts and CPU resets, halts on triple fault
 debug: $(OS_IMG)
-	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M -no-reboot -no-shutdown -d int,cpu_reset,guest_errors
+	$(QEMU) -drive file=$(OS_IMG),format=raw -m 128M -no-reboot -no-shutdown -d int,cpu_reset,guest_errors
 
 # Debug with CPU state - also shows CPU register dumps
 debug-cpu: $(OS_IMG)
-	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M -no-reboot -no-shutdown -d int,cpu_reset,cpu,guest_errors
+	$(QEMU) -drive file=$(OS_IMG),format=raw -m 128M -no-reboot -no-shutdown -d int,cpu_reset,cpu,guest_errors
 
 # Debug with instruction trace - WARNING: Very verbose!
 debug-trace: $(OS_IMG)
-	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M -no-reboot -no-shutdown -d int,cpu_reset,in_asm,guest_errors
+	$(QEMU) -drive file=$(OS_IMG),format=raw -m 128M -no-reboot -no-shutdown -d int,cpu_reset,in_asm,guest_errors
 
 # Debug everything - WARNING: Extremely verbose!
 debug-all: $(OS_IMG)
-	$(QEMU) -drive file=$(OS_IMG),format=raw,if=floppy -m 128M -no-reboot -no-shutdown -d int,cpu_reset,cpu,exec,in_asm,guest_errors
+	$(QEMU) -drive file=$(OS_IMG),format=raw -m 128M -no-reboot -no-shutdown -d int,cpu_reset,cpu,exec,in_asm,guest_errors
 
 # Clean build files
 clean:

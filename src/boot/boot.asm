@@ -13,7 +13,7 @@ start:
     ; Load kernel from sector 2 to 0x8000 (simpler address)
     mov ax, 0x020E      ; Read 14 sectors (7KB)
     mov cx, 0x0002      ; Cylinder 0, Sector 2
-    mov dx, 0x0000      ; Head 0, Drive 0
+    mov dx, 0x0080      ; Head 0, Drive 0x80 (first hard disk)
     mov bx, 0x8000      ; Load to 0x8000
     int 0x13
     jc error
