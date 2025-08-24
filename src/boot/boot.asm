@@ -52,6 +52,12 @@ protected_mode:
     mov ss, ax
     mov esp, 0x90000
     
+    ; Enable A20 line for access to memory above 1MB
+    ; Using Fast A20 Gate method (port 0x92)
+    in al, 0x92
+    or al, 2        ; Set bit 1 (A20 enable)
+    out 0x92, al
+    
     ; Jump to kernel at 0x8000
     jmp 0x8000
 
