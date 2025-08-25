@@ -94,6 +94,8 @@ The editor includes vim-style modal editing with three modes:
 - **h/j/k/l**: Move cursor left/down/up/right (vim navigation)
 - **w**: Move forward one word
 - **b**: Move backward one word
+- **$**: Move to end of line
+- **^**: Move to first non-whitespace character of line
 - **i**: Enter insert mode at cursor
 - **a**: Enter insert mode after cursor (append)
 - **o**: Insert new line below and enter insert mode (with auto-indent)
@@ -102,6 +104,7 @@ The editor includes vim-style modal editing with three modes:
 - **x**: Delete character under cursor
 - **dd**: Delete entire line
 - **d$**: Delete from cursor to end of line
+- **d^**: Delete from cursor to beginning of line (first non-whitespace)
 - **dt[char]**: Delete from cursor up to (but not including) specified character
 - **ESC** or **Ctrl+[**: Return to normal mode
 

@@ -747,6 +747,48 @@ void delete_to_eol(void) {
     }
 }
 
+/* Delete from cursor to beginning of line's first non-whitespace (vim d^ command) */
+void delete_to_bol(void) {
+    Page *page = pages[current_page];
+    int line_start;
+    int first_non_ws;
+    int delete_start;
+    int delete_count;
+    int i;
+    
+    /* Find start of current line */
+    line_start = page->cursor_pos;
+    while (line_start > 0 && page->buffer[line_start - 1] != '\n') {
+        line_start--;
+    }
+    
+    /* Find first non-whitespace character position */
+    first_non_ws = line_start;
+    while (first_non_ws < page->length && 
+           first_non_ws < page->cursor_pos &&
+           (page->buffer[first_non_ws] == ' ' || 
+            page->buffer[first_non_ws] == '\t')) {
+        first_non_ws++;
+    }
+    
+    /* Delete from first_non_ws to cursor_pos (not including cursor_pos) */
+    delete_start = first_non_ws;
+    delete_count = page->cursor_pos - delete_start;
+    
+    if (delete_count > 0) {
+        /* Shift remaining text left */
+        for (i = page->cursor_pos; i < page->length; i++) {
+            page->buffer[i - delete_count] = page->buffer[i];
+        }
+        
+        /* Update length and cursor position */
+        page->length -= delete_count;
+        page->cursor_pos = delete_start;
+        
+        refresh_screen();
+    }
+}
+
 /* Delete till character */
 void delete_till_char(char target) {
     Page *page = pages[current_page];
@@ -905,6 +947,53 @@ void insert_line_above(void) {
     
     /* Enter insert mode */
     set_mode(MODE_INSERT);
+    refresh_screen();
+}
+
+/* Move cursor to end of line (vim '$' command) */
+void move_to_end_of_line(void) {
+    Page *page = pages[current_page];
+    
+    /* Find end of current line */
+    while (page->cursor_pos < page->length && 
+           page->buffer[page->cursor_pos] != '\n') {
+        page->cursor_pos++;
+    }
+    
+    /* If not at end of buffer and not on empty line, move back one 
+     * to be on last character rather than newline */
+    if (page->cursor_pos > 0 && 
+        page->cursor_pos < page->length &&
+        page->buffer[page->cursor_pos] == '\n' &&
+        (page->cursor_pos == 0 || page->buffer[page->cursor_pos - 1] != '\n')) {
+        page->cursor_pos--;
+    }
+    
+    refresh_screen();
+}
+
+/* Move cursor to first non-whitespace character of line (vim '^' command) */
+void move_to_first_non_whitespace(void) {
+    Page *page = pages[current_page];
+    int line_start;
+    
+    /* Find start of current line */
+    line_start = page->cursor_pos;
+    while (line_start > 0 && page->buffer[line_start - 1] != '\n') {
+        line_start--;
+    }
+    
+    /* Move to start of line first */
+    page->cursor_pos = line_start;
+    
+    /* Skip whitespace to find first non-whitespace character */
+    while (page->cursor_pos < page->length && 
+           page->buffer[page->cursor_pos] != '\n' &&
+           (page->buffer[page->cursor_pos] == ' ' || 
+            page->buffer[page->cursor_pos] == '\t')) {
+        page->cursor_pos++;
+    }
+    
     refresh_screen();
 }
 
@@ -1616,6 +1705,10 @@ void kernel_main(void) {
                 /* 'd$' - delete to end of line */
                 delete_to_eol();
                 pending_delete = 0;
+            } else if (key == '^' && pending_delete) {
+                /* 'd^' - delete to beginning of line (first non-whitespace) */
+                delete_to_bol();
+                pending_delete = 0;
             } else if (pending_dt && key > 0 && key < 127) {
                 /* Complete 'dt<char>' command */
                 delete_till_char((char)key);
@@ -1638,6 +1731,15 @@ void kernel_main(void) {
                 pending_dt = 0;
             } else if (key == 'O') {  /* Insert line above and enter insert mode */
                 insert_line_above();
+                pending_delete = 0;
+                pending_dt = 0;
+            } else if (key == '$' && !pending_delete) {  /* Move to end of line */
+                move_to_end_of_line();
+                pending_dt = 0;
+            } else if (key == '^') {  /* Move to first non-whitespace character */
+                if (!pending_delete) {
+                    move_to_first_non_whitespace();
+                }
                 pending_delete = 0;
                 pending_dt = 0;
             } else if (key == -5) {  /* Shift+Left = Previous page */
