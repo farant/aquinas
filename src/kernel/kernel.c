@@ -63,6 +63,13 @@ typedef enum {
 
 EditorMode editor_mode = MODE_INSERT;  /* Start in insert mode for now */
 
+/* 'fd' escape sequence timeout in milliseconds 
+ * When 'f' is typed, it's inserted immediately. If 'd' follows within
+ * this timeout window, the 'f' is deleted and editor exits to normal mode.
+ * This avoids delays when typing multiple 'f's in succession.
+ */
+#define FD_ESCAPE_TIMEOUT_MS 300
+
 /* Mouse state */
 int mouse_x = 40;          /* Mouse X position (0-79) */
 int mouse_y = 12;          /* Mouse Y position (0-24) */
@@ -1376,33 +1383,47 @@ void kernel_main(void) {
         /* Check for keyboard input (non-blocking) */
         key = keyboard_check();
         
-        /* Handle 'f' buffering for potential 'fd' escape sequence */
-        if (editor_mode != MODE_NORMAL) {  /* Only check in INSERT/VISUAL modes */
-            if (last_key == 'f' && get_elapsed_ms(last_key_time) >= 300) {
-                /* 'f' timeout expired without 'd', insert the buffered 'f' */
-                if (editor_mode == MODE_INSERT) {
-                    insert_char('f');
+        /* Handle 'fd' escape sequence - insert 'f' immediately, delete if 'd' follows */
+        if (editor_mode == MODE_INSERT) {
+            /* Check if 'd' was typed shortly after 'f' */
+            if (key == 'd' && last_key == 'f' && get_elapsed_ms(last_key_time) < FD_ESCAPE_TIMEOUT_MS) {
+                /* 'fd' sequence detected - delete the 'f' we just inserted and exit */
+                Page *page = pages[current_page];
+                if (page->cursor_pos > 0 && page->buffer[page->cursor_pos - 1] == 'f') {
+                    int i;
+                    /* Delete the 'f' we just typed */
+                    page->cursor_pos--;
+                    page->length--;
+                    /* Shift remaining text left */
+                    for (i = page->cursor_pos; i < page->length; i++) {
+                        page->buffer[i] = page->buffer[i + 1];
+                    }
+                    /* Refresh screen to show the 'f' was deleted */
+                    refresh_screen();
                 }
-                last_key = 0;
-            }
-            
-            if (key == 'f') {
-                /* Buffer 'f' instead of inserting immediately */
+                /* Exit to normal mode */
+                set_mode(MODE_NORMAL);
+                key = 0;  /* Suppress the 'd' */
+                last_key = 0;  /* Clear the 'f' marker */
+            } else if (key == 'f') {
+                /* Mark that we typed 'f' for potential 'fd' sequence */
                 last_key = 'f';
                 last_key_time = current_time;
-                key = 0;  /* Suppress the 'f' for now */
-            } else if (key == 'd' && last_key == 'f' && 
-                       get_elapsed_ms(last_key_time) < 300) {
-                /* 'fd' sequence detected - treat as ESC */
-                key = 27;
-                last_key = 0;  /* Clear buffer */
-            } else if (key > 0 && last_key == 'f') {
-                /* Different key after 'f', insert the buffered 'f' first */
-                if (editor_mode == MODE_INSERT) {
-                    insert_char('f');
-                }
+                /* Let the 'f' be processed normally (inserted) below */
+            } else if (key > 0) {
+                /* Any other key - clear the 'f' marker */
                 last_key = 0;
-                /* Continue processing the current key normally */
+            }
+        } else if (editor_mode == MODE_VISUAL) {
+            /* For visual mode, just check for 'fd' to exit without insertion */
+            if (key == 'd' && last_key == 'f' && get_elapsed_ms(last_key_time) < FD_ESCAPE_TIMEOUT_MS) {
+                /* Exit to normal mode */
+                key = 27;
+                last_key = 0;
+            } else if (key == 'f') {
+                last_key = 'f';
+                last_key_time = current_time;
+                key = 0;  /* Don't process 'f' in visual mode */
             }
         }
         

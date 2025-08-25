@@ -87,6 +87,35 @@ make debug-all   # Maximum verbosity
 - Backspace for character deletion
 - Non-blocking input (keyboard and mouse work simultaneously)
 
+### Vim Mode
+The editor includes vim-style modal editing with three modes:
+
+#### Normal Mode (default)
+- **h/j/k/l**: Move cursor left/down/up/right (vim navigation)
+- **w**: Move forward one word
+- **b**: Move backward one word
+- **i**: Enter insert mode at cursor
+- **a**: Enter insert mode after cursor (append)
+- **v**: Enter visual mode for selection
+- **x**: Delete character under cursor
+- **dd**: Delete entire line
+- **d$**: Delete from cursor to end of line
+- **dt[char]**: Delete from cursor up to (but not including) specified character
+- **ESC** or **Ctrl+[**: Return to normal mode
+
+#### Insert Mode
+- Type normally to insert text
+- **Arrow keys**: Move cursor
+- **Backspace**: Delete character before cursor
+- **Tab**: Insert tab character (displayed as 2 spaces)
+- **Enter**: New line with auto-indentation
+- **ESC**, **Ctrl+[**, or **fd** (typed quickly): Return to normal mode
+
+#### Visual Mode
+- **h/j/k/l** or **Arrow keys**: Extend selection
+- **ESC**: Return to normal mode (cancels selection)
+- Text selection is highlighted in red
+
 ## Memory Map
 
 - `0x7C00` - Boot sector loaded by BIOS
@@ -123,7 +152,7 @@ typedef struct {
 ### User Interface
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│      [prev] Page 1 of 3 [next]        ← Navigation bar (gray)   │
+│  NORMAL  [prev] Page 1 of 3 [next]    ← Mode indicator & nav bar│
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  Your text appears here...                                      │
@@ -133,6 +162,8 @@ typedef struct {
 │                                ← Mouse cursor (green background) │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+The mode indicator shows the current editing mode (NORMAL, INSERT, or VISUAL) in the navigation bar.
 
 ### Navigation Controls
 - **Mouse**: Click [prev] or [next] buttons in navigation bar
