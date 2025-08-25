@@ -51,7 +51,12 @@ brew install qemu
 make        # Build the OS
 make run    # Build and run in QEMU
 make clean  # Clean build files
-make debug  # Run with debug output
+
+# Debug targets (for troubleshooting)
+make debug       # Show interrupts and exceptions
+make debug-cpu   # Include CPU register dumps  
+make debug-trace # Include instruction trace (verbose)
+make debug-all   # Maximum verbosity
 ```
 
 ## Features
@@ -86,17 +91,18 @@ make debug  # Run with debug output
 
 - `0x7C00` - Boot sector loaded by BIOS
 - `0x8000` - Kernel loaded by bootloader
-- `0x90000` - Stack
 - `0xB8000` - VGA text buffer
+- `0x200000` - Stack (2MB mark, grows downward)
 
 ## How It Works
 
 ### Boot Process
 1. BIOS loads boot sector to `0x7C00`
-2. Bootloader loads kernel from disk to `0x8000` (14 sectors = 7KB)
-3. Bootloader switches CPU to 32-bit protected mode
-4. Bootloader jumps to kernel entry point
-5. Kernel initializes hardware and starts text editor
+2. Bootloader loads kernel from IDE hard drive to `0x8000` (14 sectors = 7KB)
+3. Bootloader enables A20 line for >1MB memory access
+4. Bootloader switches CPU to 32-bit protected mode
+5. Bootloader jumps to kernel entry point
+6. Kernel initializes hardware and starts text editor
 
 ### Text Editor Architecture
 The editor uses a **page-based architecture** where each page is completely independent:
