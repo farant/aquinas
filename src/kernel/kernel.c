@@ -32,6 +32,7 @@
 #include "serial.h"
 #include "vga.h"
 #include "timer.h"
+#include "rtc.h"
 
 /* Page size is one screen minus the navigation bar */
 #define PAGE_SIZE ((VGA_HEIGHT - 1) * VGA_WIDTH)
@@ -94,9 +95,12 @@ void draw_nav_bar(void) {
     int i;
     unsigned short color;
     char page_info[40];
+    char datetime_str[32];
     int len = 0;
+    int dt_len = 0;
     int page_num;
     int start_pos;
+    rtc_time_t now;
     
     /* Fill top line with white background (inverse colors) */
     for (i = 0; i < VGA_WIDTH; i++) {
@@ -171,6 +175,67 @@ void draw_nav_bar(void) {
             color = VGA_COLOR_MOUSE;  /* Green background for mouse cursor */
         }
         vga_write_char(start_pos + i, page_info[i], color);
+    }
+    
+    /* Get current time for display in upper right */
+    get_current_time(&now);
+    
+    /* Format date/time string: "MM/DD/YYYY HH:MM AM/PM" */
+    /* Month - always 2 digits */
+    datetime_str[dt_len++] = '0' + (now.month / 10);
+    datetime_str[dt_len++] = '0' + (now.month % 10);
+    datetime_str[dt_len++] = '/';
+    
+    /* Day - always 2 digits */
+    datetime_str[dt_len++] = '0' + (now.day / 10);
+    datetime_str[dt_len++] = '0' + (now.day % 10);
+    datetime_str[dt_len++] = '/';
+    
+    /* Year - always 4 digits */
+    datetime_str[dt_len++] = '0' + ((now.year / 1000) % 10);
+    datetime_str[dt_len++] = '0' + ((now.year / 100) % 10);
+    datetime_str[dt_len++] = '0' + ((now.year / 10) % 10);
+    datetime_str[dt_len++] = '0' + (now.year % 10);
+    datetime_str[dt_len++] = ' ';
+    
+    /* Convert to 12-hour format and determine AM/PM */
+    {
+        unsigned char display_hour = now.hour;
+        int is_pm = 0;
+        
+        if (display_hour == 0) {
+            display_hour = 12;  /* Midnight is 12 AM */
+        } else if (display_hour == 12) {
+            is_pm = 1;  /* Noon is 12 PM */
+        } else if (display_hour > 12) {
+            display_hour -= 12;
+            is_pm = 1;
+        }
+        
+        /* Hour - always 2 digits in 12-hour format */
+        datetime_str[dt_len++] = '0' + (display_hour / 10);
+        datetime_str[dt_len++] = '0' + (display_hour % 10);
+        datetime_str[dt_len++] = ':';
+        
+        /* Minute - always 2 digits */
+        datetime_str[dt_len++] = '0' + (now.minute / 10);
+        datetime_str[dt_len++] = '0' + (now.minute % 10);
+        datetime_str[dt_len++] = ' ';
+        
+        /* AM/PM */
+        datetime_str[dt_len++] = is_pm ? 'P' : 'A';
+        datetime_str[dt_len++] = 'M';
+    }
+    
+    /* Display datetime in upper right corner (with 1 space padding from edge) */
+    start_pos = VGA_WIDTH - dt_len - 1;
+    for (i = 0; i < dt_len; i++) {
+        color = 0x7F00;  /* Gray background, white text */
+        /* Check if mouse is on this position */
+        if (mouse_visible && mouse_y == 0 && mouse_x == start_pos + i) {
+            color = VGA_COLOR_MOUSE;  /* Green background for mouse cursor */
+        }
+        vga_write_char(start_pos + i, datetime_str[i], color);
     }
 }
 
@@ -948,35 +1013,64 @@ void kernel_main(void) {
     /* Initialize timer system */
     init_timer();
     
+    /* Initialize RTC to get current date/time */
+    init_rtc();
+    
     /* Initialize mouse (uses COM1) */
     init_mouse();
     serial_write_string("Mouse initialized on COM1.\n");
     serial_write_string("Text editor ready.\n");
     
+
     /* Start with empty screen, ready for typing */
     refresh_screen();
+
+		serial_write_string("Made it past first refresh screen\n");
     
     /* Main editor loop - non-blocking */
     while (1) {
-        /* Stack monitoring - report every 30 seconds using timer */
+        /* Stack monitoring - report every 5 seconds using timer */
         static unsigned int last_stack_report = 0;
-        unsigned int current_time = get_ticks();
+        static unsigned int last_clock_update = 0;
+        unsigned int current_time = 0;
+
+
+        current_time = get_ticks();
+
         
         if (get_elapsed_ms(last_stack_report) >= 5000) {
             unsigned int current_usage = get_stack_usage();
             unsigned int max_usage = get_max_stack_usage();
+            rtc_time_t now;
             
-            serial_write_string("Stack @ ");
-            serial_write_hex(current_time / 1000);
-            serial_write_string("s: current=");
-            serial_write_hex(current_usage);
-            serial_write_string(" bytes, max=");
-            serial_write_hex(max_usage);
+            /* Get current time */
+            get_current_time(&now);
+            
+            /* Print time and stack info */
+            serial_write_string("[");
+            if (now.hour < 10) serial_write_string("0");
+            serial_write_int(now.hour);
+            serial_write_string(":");
+            if (now.minute < 10) serial_write_string("0");
+            serial_write_int(now.minute);
+            serial_write_string(":");
+            if (now.second < 10) serial_write_string("0");
+            serial_write_int(now.second);
+            serial_write_string("] Stack: ");
+            serial_write_int(current_usage);
+            serial_write_string("/");
+            serial_write_int(max_usage);
             serial_write_string(" bytes, ESP=");
             serial_write_hex(get_esp());
             serial_write_string("\n");
             
             last_stack_report = current_time;
+        }
+        
+        /* Update clock display every second */
+        if (get_elapsed_ms(last_clock_update) >= 1000) {
+            draw_nav_bar();  /* Redraw nav bar to update time */
+            last_clock_update = current_time;
         }
         
         /* Poll for mouse data (will refresh screen if mouse moves) */

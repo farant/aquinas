@@ -105,3 +105,49 @@ void serial_write_hex(unsigned int value) {
     serial_write_string("0x");
     serial_write_string(buffer);
 }
+
+/* Write a decimal integer to COM2 (for debugging).
+ * Handles negative numbers by printing minus sign.
+ * Converts integer to decimal string representation. */
+void serial_write_int(int value) {
+    char buffer[12];  /* Max int is -2147483648 (11 chars + null) */
+    int i = 0;
+    int is_negative = 0;
+    unsigned int abs_value;
+    
+    /* Handle negative numbers */
+    if (value < 0) {
+        is_negative = 1;
+        /* Handle INT_MIN special case (can't negate it) */
+        /* Use unsigned literal with cast to avoid C90 warning */
+        if (value == (int)0x80000000) {
+            serial_write_string("-2147483648");
+            return;
+        }
+        abs_value = -value;
+    } else {
+        abs_value = value;
+    }
+    
+    /* Handle zero special case */
+    if (abs_value == 0) {
+        serial_write_char('0');
+        return;
+    }
+    
+    /* Convert to string (backwards) */
+    while (abs_value > 0) {
+        buffer[i++] = '0' + (abs_value % 10);
+        abs_value /= 10;
+    }
+    
+    /* Add minus sign if negative */
+    if (is_negative) {
+        serial_write_char('-');
+    }
+    
+    /* Print digits in reverse order */
+    while (i > 0) {
+        serial_write_char(buffer[--i]);
+    }
+}

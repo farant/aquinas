@@ -98,7 +98,7 @@ make debug-all   # Maximum verbosity
 
 ### Boot Process
 1. BIOS loads boot sector to `0x7C00`
-2. Bootloader loads kernel from IDE hard drive to `0x8000` (14 sectors = 7KB)
+2. Bootloader loads kernel from IDE hard drive to `0x8000` (30 sectors = 15KB)
 3. Bootloader enables A20 line for >1MB memory access
 4. Bootloader switches CPU to 32-bit protected mode
 5. Bootloader jumps to kernel entry point

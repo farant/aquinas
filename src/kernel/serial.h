@@ -27,5 +27,6 @@ int serial_transmit_empty(void);
 void serial_write_char(char c);
 void serial_write_string(const char *str);
 void serial_write_hex(unsigned int value);
+void serial_write_int(int value);  /* Write decimal integer */
 
 #endif /* SERIAL_H */
