@@ -31,6 +31,7 @@
 #include "io.h"
 #include "serial.h"
 #include "vga.h"
+#include "timer.h"
 
 /* Page size is one screen minus the navigation bar */
 #define PAGE_SIZE ((VGA_HEIGHT - 1) * VGA_WIDTH)
@@ -59,6 +60,7 @@ int mouse_visible = 0;     /* Is mouse cursor visible */
 /* Forward declarations */
 void refresh_screen(void);
 void draw_nav_bar(void);
+unsigned int get_stack_usage(void);
 
 /* Port I/O functions now in io.h */
 
@@ -891,6 +893,36 @@ int keyboard_check(void) {
 }
 
 /* Kernel entry point */
+/* Get current stack pointer value */
+unsigned int get_esp(void) {
+    unsigned int esp;
+    __asm__ __volatile__("movl %%esp, %0" : "=r"(esp));
+    return esp;
+}
+
+/* Calculate stack usage from initial 2MB position */
+unsigned int get_stack_usage(void) {
+    unsigned int current_esp = get_esp();
+    unsigned int initial_esp = 0x200000;  /* Stack starts at 2MB */
+    
+    /* Stack grows downward, so usage is the difference */
+    if (current_esp < initial_esp) {
+        return initial_esp - current_esp;
+    }
+    return 0;  /* Stack pointer is above initial (shouldn't happen) */
+}
+
+/* Get maximum stack depth seen so far */
+unsigned int get_max_stack_usage(void) {
+    static unsigned int max_usage = 0;
+    unsigned int current_usage = get_stack_usage();
+    
+    if (current_usage > max_usage) {
+        max_usage = current_usage;
+    }
+    return max_usage;
+}
+
 void kernel_main(void) {
     int key;
     
@@ -913,6 +945,9 @@ void kernel_main(void) {
     serial_write_string("\n\nAquinas OS started!\n");
     serial_write_string("COM2 debug port initialized.\n");
     
+    /* Initialize timer system */
+    init_timer();
+    
     /* Initialize mouse (uses COM1) */
     init_mouse();
     serial_write_string("Mouse initialized on COM1.\n");
@@ -923,6 +958,27 @@ void kernel_main(void) {
     
     /* Main editor loop - non-blocking */
     while (1) {
+        /* Stack monitoring - report every 30 seconds using timer */
+        static unsigned int last_stack_report = 0;
+        unsigned int current_time = get_ticks();
+        
+        if (get_elapsed_ms(last_stack_report) >= 5000) {
+            unsigned int current_usage = get_stack_usage();
+            unsigned int max_usage = get_max_stack_usage();
+            
+            serial_write_string("Stack @ ");
+            serial_write_hex(current_time / 1000);
+            serial_write_string("s: current=");
+            serial_write_hex(current_usage);
+            serial_write_string(" bytes, max=");
+            serial_write_hex(max_usage);
+            serial_write_string(" bytes, ESP=");
+            serial_write_hex(get_esp());
+            serial_write_string("\n");
+            
+            last_stack_report = current_time;
+        }
+        
         /* Poll for mouse data (will refresh screen if mouse moves) */
         poll_mouse();
         

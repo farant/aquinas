@@ -19,12 +19,13 @@ LDFLAGS = -m elf_i386 -T $(SRC_DIR)/linker.ld -nostdlib
 # Source files
 BOOT_SRC = $(BOOT_DIR)/boot.asm
 KERNEL_ENTRY_SRC = $(KERNEL_DIR)/kernel_entry.asm
-KERNEL_C_SRCS = $(KERNEL_DIR)/kernel.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/vga.c
+KERNEL_C_SRCS = $(KERNEL_DIR)/kernel.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/vga.c $(KERNEL_DIR)/timer.c
 
 # Build files
 BOOT_BIN = $(BUILD_DIR)/boot.bin
 KERNEL_ENTRY_OBJ = $(BUILD_DIR)/kernel_entry.o
-KERNEL_C_OBJS = $(BUILD_DIR)/kernel.o $(BUILD_DIR)/serial.o $(BUILD_DIR)/vga.o
+KERNEL_C_OBJS = $(BUILD_DIR)/kernel.o $(BUILD_DIR)/serial.o $(BUILD_DIR)/vga.o $(BUILD_DIR)/timer.o
+TIMER_ASM_OBJ = $(BUILD_DIR)/timer_asm.o
 KERNEL_BIN = $(BUILD_DIR)/kernel.bin
 OS_IMG = $(BUILD_DIR)/aquinas.img
 
@@ -43,12 +44,16 @@ $(BOOT_BIN): $(BOOT_SRC)
 $(KERNEL_ENTRY_OBJ): $(KERNEL_ENTRY_SRC)
 	$(AS) -f elf32 $< -o $@
 
+# Build timer assembly
+$(TIMER_ASM_OBJ): $(KERNEL_DIR)/timer_asm.asm
+	$(AS) -f elf32 $< -o $@
+
 # Build kernel C files
 $(BUILD_DIR)/%.o: $(KERNEL_DIR)/%.c
 	$(CC) $(CFLAGS) -I$(KERNEL_DIR) -c $< -o $@
 
 # Link kernel
-$(KERNEL_BIN): $(KERNEL_ENTRY_OBJ) $(KERNEL_C_OBJS)
+$(KERNEL_BIN): $(KERNEL_ENTRY_OBJ) $(KERNEL_C_OBJS) $(TIMER_ASM_OBJ)
 	$(LD) $(LDFLAGS) $^ -o $@
 
 # Create OS image (10MB IDE disk instead of 1.44MB floppy)
@@ -72,7 +77,7 @@ run-debug: $(OS_IMG)
 
 # Debug mode - shows interrupts and CPU resets, halts on triple fault
 debug: $(OS_IMG)
-	$(QEMU) -drive file=$(OS_IMG),format=raw -m 128M -no-reboot -no-shutdown -d int,cpu_reset,guest_errors
+	$(QEMU) -drive file=$(OS_IMG),format=raw -m 128M -no-reboot -no-shutdown -d int,cpu_reset,guest_errors -display cocoa,zoom-to-fit=on -full-screen -serial msmouse -serial stdio
 
 # Debug with CPU state - also shows CPU register dumps
 debug-cpu: $(OS_IMG)
