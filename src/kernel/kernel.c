@@ -783,6 +783,131 @@ void delete_till_char(char target) {
     }
 }
 
+/* Insert a new line below current line and enter insert mode (vim 'o' command) */
+void insert_line_below(void) {
+    Page *page = pages[current_page];
+    int line_end;
+    int line_start;
+    int indent_count;
+    int check_pos;
+    int i;
+    
+    /* Find end of current line */
+    line_end = page->cursor_pos;
+    while (line_end < page->length && page->buffer[line_end] != '\n') {
+        line_end++;
+    }
+    
+    /* Find start of current line to get indentation */
+    line_start = page->cursor_pos;
+    while (line_start > 0 && page->buffer[line_start - 1] != '\n') {
+        line_start--;
+    }
+    
+    /* Count leading spaces/tabs on current line for auto-indent */
+    indent_count = 0;
+    check_pos = line_start;
+    while (check_pos < page->length && 
+           (page->buffer[check_pos] == ' ' || page->buffer[check_pos] == '\t')) {
+        indent_count++;
+        check_pos++;
+    }
+    
+    /* Check if we have enough space for newline + indentation */
+    if (page->length + 1 + indent_count >= PAGE_SIZE - 1) return;
+    
+    /* Move cursor to end of current line */
+    page->cursor_pos = line_end;
+    
+    /* Shift everything after line_end forward to make room */
+    for (i = page->length + indent_count; i > line_end; i--) {
+        page->buffer[i] = page->buffer[i - 1 - indent_count];
+    }
+    
+    /* Insert newline */
+    page->buffer[line_end] = '\n';
+    page->cursor_pos = line_end + 1;
+    page->length++;
+    
+    /* Copy indentation from current line (preserving tabs/spaces) */
+    for (i = 0; i < indent_count; i++) {
+        page->buffer[page->cursor_pos] = page->buffer[line_start + i];
+        page->cursor_pos++;
+        page->length++;
+    }
+    
+    /* Enter insert mode */
+    set_mode(MODE_INSERT);
+    refresh_screen();
+}
+
+/* Insert a new line above current line and enter insert mode (vim 'O' command) */
+void insert_line_above(void) {
+    Page *page = pages[current_page];
+    int line_start;
+    int original_line_start;
+    int indent_count;
+    int check_pos;
+    int i;
+    char indent_chars[80];  /* Store indentation characters */
+    
+    /* Find start of current line */
+    line_start = page->cursor_pos;
+    while (line_start > 0 && page->buffer[line_start - 1] != '\n') {
+        line_start--;
+    }
+    original_line_start = line_start;
+    
+    /* Count and save indentation from current line */
+    indent_count = 0;
+    check_pos = line_start;
+    while (check_pos < page->length && 
+           (page->buffer[check_pos] == ' ' || page->buffer[check_pos] == '\t') &&
+           indent_count < 80) {
+        indent_chars[indent_count] = page->buffer[check_pos];
+        indent_count++;
+        check_pos++;
+    }
+    
+    /* Check if we have enough space for newline + indentation */
+    if (page->length + 1 + indent_count >= PAGE_SIZE - 1) return;
+    
+    /* Shift everything from line_start forward to make room for newline + indentation */
+    for (i = page->length + indent_count; i >= line_start; i--) {
+        if (i - 1 - indent_count >= line_start) {
+            page->buffer[i] = page->buffer[i - 1 - indent_count];
+        }
+    }
+    
+    /* Now insert the indentation and newline */
+    if (line_start > 0) {
+        /* Not at beginning - insert indentation then newline */
+        for (i = 0; i < indent_count; i++) {
+            page->buffer[line_start + i] = indent_chars[i];
+        }
+        /* Add newline after indentation */
+        page->buffer[line_start + indent_count] = '\n';
+        /* Position cursor at end of indentation on new line */
+        page->cursor_pos = line_start + indent_count;
+    } else {
+        /* At beginning of buffer */
+        for (i = 0; i < indent_count; i++) {
+            page->buffer[i] = indent_chars[i];
+        }
+        /* Add newline after indentation */
+        page->buffer[indent_count] = '\n';
+        /* Position cursor at end of indentation */
+        page->cursor_pos = indent_count;
+    }
+    
+    /* Update length */
+    page->length += 1 + indent_count;
+    
+    /* Enter insert mode */
+    set_mode(MODE_INSERT);
+    refresh_screen();
+}
+
 /* Move cursor to next word */
 void move_word_forward(void) {
     Page *page = pages[current_page];
@@ -1505,6 +1630,14 @@ void kernel_main(void) {
                 if (!pending_delete) {
                     move_word_backward();
                 }
+                pending_delete = 0;
+                pending_dt = 0;
+            } else if (key == 'o') {  /* Insert line below and enter insert mode */
+                insert_line_below();
+                pending_delete = 0;
+                pending_dt = 0;
+            } else if (key == 'O') {  /* Insert line above and enter insert mode */
+                insert_line_above();
                 pending_delete = 0;
                 pending_dt = 0;
             } else if (key == -5) {  /* Shift+Left = Previous page */

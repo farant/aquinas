@@ -81,15 +81,18 @@ debug: $(OS_IMG)
 
 # Debug with CPU state - also shows CPU register dumps
 debug-cpu: $(OS_IMG)
-	$(QEMU) -drive file=$(OS_IMG),format=raw -m 128M -no-reboot -no-shutdown -d int,cpu_reset,cpu,guest_errors
+	$(QEMU) -drive file=$(OS_IMG),format=raw -m 128M -no-reboot -no-shutdown -d int,cpu_reset,cpu,guest_errors -display cocoa,zoom-to-fit=on -full-screen -serial msmouse -serial stdio
+
 
 # Debug with instruction trace - WARNING: Very verbose!
 debug-trace: $(OS_IMG)
-	$(QEMU) -drive file=$(OS_IMG),format=raw -m 128M -no-reboot -no-shutdown -d int,cpu_reset,in_asm,guest_errors
+	$(QEMU) -drive file=$(OS_IMG),format=raw -m 128M -no-reboot -no-shutdown -d int,cpu_reset,in_asm,guest_errors -display cocoa,zoom-to-fit=on -full-screen -serial msmouse -serial stdio
+
 
 # Debug everything - WARNING: Extremely verbose!
 debug-all: $(OS_IMG)
-	$(QEMU) -drive file=$(OS_IMG),format=raw -m 128M -no-reboot -no-shutdown -d int,cpu_reset,cpu,exec,in_asm,guest_errors
+	$(QEMU) -drive file=$(OS_IMG),format=raw -m 128M -no-reboot -no-shutdown -d int,cpu_reset,cpu,exec,in_asm,guest_errors -display cocoa,zoom-to-fit=on -full-screen -serial msmouse -serial stdio
+
 
 # Clean build files
 clean:

@@ -96,6 +96,8 @@ The editor includes vim-style modal editing with three modes:
 - **b**: Move backward one word
 - **i**: Enter insert mode at cursor
 - **a**: Enter insert mode after cursor (append)
+- **o**: Insert new line below and enter insert mode (with auto-indent)
+- **O**: Insert new line above and enter insert mode (with auto-indent)
 - **v**: Enter visual mode for selection
 - **x**: Delete character under cursor
 - **dd**: Delete entire line
