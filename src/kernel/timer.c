@@ -12,6 +12,7 @@
 #include "timer.h"
 #include "io.h"
 #include "serial.h"
+#include "memory.h"
 
 /* PIT ports */
 #define PIT_CHANNEL0 0x40   /* Channel 0 data port */
@@ -40,8 +41,8 @@ struct idt_ptr {
     unsigned int base;        /* Base address of IDT */
 } __attribute__((packed));
 
-/* IDT with 256 entries */
-struct idt_entry idt[256];
+/* IDT with 256 entries - will be allocated on heap */
+struct idt_entry *idt = NULL;
 struct idt_ptr idtp;
 
 /* System tick counter (milliseconds since boot) */
@@ -98,6 +99,14 @@ static void idt_set_gate(unsigned char num, unsigned int base,
 static void init_idt(void) {
     int i;
     
+    /* Allocate IDT on heap (2KB) */
+    idt = (struct idt_entry*)calloc(256, sizeof(struct idt_entry));
+    if (idt == NULL) {
+        serial_write_string("FATAL: Failed to allocate IDT!\n");
+        /* Can't continue without IDT */
+        while(1); /* Hang */
+    }
+    
     /* Install default handler for ALL interrupts first */
     /* This prevents triple faults from unhandled interrupts */
     for (i = 0; i < 256; i++) {
@@ -110,7 +119,7 @@ static void init_idt(void) {
     
     /* Set up IDT pointer */
     idtp.limit = (sizeof(struct idt_entry) * 256) - 1;
-    idtp.base = (unsigned int)&idt;
+    idtp.base = (unsigned int)idt;  /* No & needed now, idt is already a pointer */
     
     /* Load the IDT */
     __asm__ __volatile__("lidt %0" : : "m" (idtp));
@@ -171,7 +180,9 @@ void init_timer(void) {
     /* Enable interrupts */
     __asm__ __volatile__("sti");
     
-    serial_write_string("Timer initialized: 1000Hz (1ms ticks)\n");
+    serial_write_string("Timer initialized: 1000Hz (1ms ticks), IDT at ");
+    serial_write_hex((unsigned int)idt);
+    serial_write_string("\n");
 }
 
 /* Get current system ticks */
