@@ -33,6 +33,7 @@
 #include "vga.h"
 #include "timer.h"
 #include "rtc.h"
+#include "memory.h"
 
 /* Page size is one screen minus the navigation bar */
 #define PAGE_SIZE ((VGA_HEIGHT - 1) * VGA_WIDTH)
@@ -1009,6 +1010,73 @@ void kernel_main(void) {
     init_debug_serial();
     serial_write_string("\n\nAquinas OS started!\n");
     serial_write_string("COM2 debug port initialized.\n");
+    
+    /* Initialize memory allocator */
+    init_memory();
+    
+    /* Test memory allocation */
+    {
+        char* test1;
+        int* test2;
+        char* test3;
+        
+        serial_write_string("Testing memory allocator:\n");
+        
+        /* Test small allocation */
+        test1 = (char*)malloc(100);
+        if (test1) {
+            serial_write_string("  Allocated 100 bytes at ");
+            serial_write_hex((unsigned int)test1);
+            serial_write_string("\n");
+            
+            /* Write and read back to test */
+            memset(test1, 'A', 100);
+            test1[99] = '\0';
+        }
+        
+        /* Test aligned allocation */
+        test2 = (int*)malloc(sizeof(int) * 10);
+        if (test2) {
+            int i;
+            serial_write_string("  Allocated 40 bytes (10 ints) at ");
+            serial_write_hex((unsigned int)test2);
+            serial_write_string("\n");
+            
+            /* Test writing integers */
+            for (i = 0; i < 10; i++) {
+                test2[i] = i * 100;
+            }
+        }
+        
+        /* Test calloc (zeroed allocation) */
+        test3 = (char*)calloc(50, sizeof(char));
+        if (test3) {
+            int i;
+            int all_zero = 1;
+            serial_write_string("  Allocated and zeroed 50 bytes at ");
+            serial_write_hex((unsigned int)test3);
+            serial_write_string("\n");
+            
+            /* Verify it's zeroed */
+            for (i = 0; i < 50; i++) {
+                if (test3[i] != 0) {
+                    all_zero = 0;
+                    break;
+                }
+            }
+            serial_write_string("  Zero check: ");
+            serial_write_string(all_zero ? "PASSED\n" : "FAILED\n");
+        }
+        
+        /* Report heap usage */
+        serial_write_string("Heap usage: ");
+        serial_write_int(get_heap_used());
+        serial_write_string(" / ");
+        serial_write_int(get_heap_size());
+        serial_write_string(" bytes (");
+        serial_write_int((get_heap_used() * 100) / get_heap_size());
+        serial_write_string("% used)\n");
+    }
     
     /* Initialize timer system */
     init_timer();

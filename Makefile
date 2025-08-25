@@ -19,12 +19,12 @@ LDFLAGS = -m elf_i386 -T $(SRC_DIR)/linker.ld -nostdlib
 # Source files
 BOOT_SRC = $(BOOT_DIR)/boot.asm
 KERNEL_ENTRY_SRC = $(KERNEL_DIR)/kernel_entry.asm
-KERNEL_C_SRCS = $(KERNEL_DIR)/kernel.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/vga.c $(KERNEL_DIR)/timer.c $(KERNEL_DIR)/rtc.c
+KERNEL_C_SRCS = $(KERNEL_DIR)/kernel.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/vga.c $(KERNEL_DIR)/timer.c $(KERNEL_DIR)/rtc.c $(KERNEL_DIR)/memory.c
 
 # Build files
 BOOT_BIN = $(BUILD_DIR)/boot.bin
 KERNEL_ENTRY_OBJ = $(BUILD_DIR)/kernel_entry.o
-KERNEL_C_OBJS = $(BUILD_DIR)/kernel.o $(BUILD_DIR)/serial.o $(BUILD_DIR)/vga.o $(BUILD_DIR)/timer.o $(BUILD_DIR)/rtc.o
+KERNEL_C_OBJS = $(BUILD_DIR)/kernel.o $(BUILD_DIR)/serial.o $(BUILD_DIR)/vga.o $(BUILD_DIR)/timer.o $(BUILD_DIR)/rtc.o $(BUILD_DIR)/memory.o
 TIMER_ASM_OBJ = $(BUILD_DIR)/timer_asm.o
 KERNEL_BIN = $(BUILD_DIR)/kernel.bin
 OS_IMG = $(BUILD_DIR)/aquinas.img
