@@ -667,6 +667,115 @@ void move_cursor_down(void) {
     refresh_screen();
 }
 
+/* Delete current line */
+void delete_line(void) {
+    Page *page = pages[current_page];
+    int line_start, line_end;
+    int delete_count;
+    int i;
+    
+    /* Find start of current line */
+    line_start = page->cursor_pos;
+    while (line_start > 0 && page->buffer[line_start - 1] != '\n') {
+        line_start--;
+    }
+    
+    /* Find end of current line (including newline) */
+    line_end = line_start;
+    while (line_end < page->length && page->buffer[line_end] != '\n') {
+        line_end++;
+    }
+    if (line_end < page->length && page->buffer[line_end] == '\n') {
+        line_end++;  /* Include the newline */
+    }
+    
+    /* Calculate how many characters to delete */
+    delete_count = line_end - line_start;
+    
+    /* Shift remaining text left */
+    for (i = line_end; i < page->length; i++) {
+        page->buffer[i - delete_count] = page->buffer[i];
+    }
+    
+    /* Update length and cursor */
+    page->length -= delete_count;
+    page->cursor_pos = line_start;
+    
+    /* Move to first non-space character of next line if exists */
+    while (page->cursor_pos < page->length && 
+           (page->buffer[page->cursor_pos] == ' ' || 
+            page->buffer[page->cursor_pos] == '\t')) {
+        page->cursor_pos++;
+    }
+    
+    refresh_screen();
+}
+
+/* Delete to end of line */
+void delete_to_eol(void) {
+    Page *page = pages[current_page];
+    int line_end;
+    int delete_count;
+    int i;
+    
+    /* Find end of current line (not including newline) */
+    line_end = page->cursor_pos;
+    while (line_end < page->length && page->buffer[line_end] != '\n') {
+        line_end++;
+    }
+    
+    /* Calculate how many characters to delete */
+    delete_count = line_end - page->cursor_pos;
+    
+    if (delete_count > 0) {
+        /* Shift remaining text left */
+        for (i = line_end; i < page->length; i++) {
+            page->buffer[i - delete_count] = page->buffer[i];
+        }
+        
+        /* Update length */
+        page->length -= delete_count;
+        
+        refresh_screen();
+    }
+}
+
+/* Delete till character */
+void delete_till_char(char target) {
+    Page *page = pages[current_page];
+    int end_pos;
+    int delete_count;
+    int i;
+    
+    /* Find target character */
+    end_pos = page->cursor_pos;
+    while (end_pos < page->length && 
+           page->buffer[end_pos] != target && 
+           page->buffer[end_pos] != '\n') {
+        end_pos++;
+    }
+    
+    /* Don't delete if we hit newline or end of buffer instead of target */
+    if (end_pos >= page->length || page->buffer[end_pos] != target) {
+        return;
+    }
+    
+    /* Calculate how many characters to delete (not including target) */
+    delete_count = end_pos - page->cursor_pos;
+    
+    if (delete_count > 0) {
+        /* Shift remaining text left */
+        for (i = end_pos; i < page->length; i++) {
+            page->buffer[i - delete_count] = page->buffer[i];
+        }
+        
+        /* Update length */
+        page->length -= delete_count;
+        
+        refresh_screen();
+    }
+}
+
 /* Move cursor to next word */
 void move_word_forward(void) {
     Page *page = pages[current_page];
@@ -1218,6 +1327,8 @@ void kernel_main(void) {
         static unsigned int last_clock_update = 0;
         static int last_key = 0;
         static unsigned int last_key_time = 0;
+        static int pending_delete = 0;  /* For 'd' command sequences */
+        static int pending_dt = 0;      /* For 'dt' command */
         unsigned int current_time = 0;
 
 
@@ -1299,29 +1410,82 @@ void kernel_main(void) {
         if (editor_mode == MODE_NORMAL) {
             /* Normal mode - vim navigation and commands */
             if (key == 'h' || key == -3) {  /* h or Left arrow */
-                move_cursor_left();
+                if (!pending_delete && !pending_dt) {
+                    move_cursor_left();
+                }
+                pending_delete = 0;  /* Cancel pending operations */
+                pending_dt = 0;
             } else if (key == 'j' || key == -2) {  /* j or Down arrow */
-                move_cursor_down();
+                if (!pending_delete && !pending_dt) {
+                    move_cursor_down();
+                }
+                pending_delete = 0;
+                pending_dt = 0;
             } else if (key == 'k' || key == -1) {  /* k or Up arrow */
-                move_cursor_up();
+                if (!pending_delete && !pending_dt) {
+                    move_cursor_up();
+                }
+                pending_delete = 0;
+                pending_dt = 0;
             } else if (key == 'l' || key == -4) {  /* l or Right arrow */
-                move_cursor_right();
+                if (!pending_delete && !pending_dt) {
+                    move_cursor_right();
+                }
+                pending_delete = 0;
+                pending_dt = 0;
             } else if (key == 'i') {  /* Enter insert mode */
                 set_mode(MODE_INSERT);
+                pending_delete = 0;
+                pending_dt = 0;
             } else if (key == 'a') {  /* Append - move right then insert */
                 move_cursor_right();
                 set_mode(MODE_INSERT);
+                pending_delete = 0;
+                pending_dt = 0;
             } else if (key == 'v') {  /* Enter visual mode */
                 Page *page = pages[current_page];
                 page->highlight_start = page->cursor_pos;
                 page->highlight_end = page->cursor_pos;
                 set_mode(MODE_VISUAL);
+                pending_delete = 0;
+                pending_dt = 0;
             } else if (key == 'x') {  /* Delete character under cursor */
                 delete_char();
+                pending_delete = 0;
+                pending_dt = 0;
+            } else if (key == 'd') {  /* Delete command */
+                if (pending_delete) {
+                    /* 'dd' - delete line */
+                    delete_line();
+                    pending_delete = 0;
+                } else {
+                    /* First 'd' - wait for next key */
+                    pending_delete = 1;
+                }
+            } else if (key == 't' && pending_delete) {
+                /* 'dt' - delete till character */
+                pending_dt = 1;
+                pending_delete = 0;
+            } else if (key == '$' && pending_delete) {
+                /* 'd$' - delete to end of line */
+                delete_to_eol();
+                pending_delete = 0;
+            } else if (pending_dt && key > 0 && key < 127) {
+                /* Complete 'dt<char>' command */
+                delete_till_char((char)key);
+                pending_dt = 0;
             } else if (key == 'w') {  /* Move forward by word */
-                move_word_forward();
+                if (!pending_delete) {
+                    move_word_forward();
+                }
+                pending_delete = 0;
+                pending_dt = 0;
             } else if (key == 'b') {  /* Move backward by word */
-                move_word_backward();
+                if (!pending_delete) {
+                    move_word_backward();
+                }
+                pending_delete = 0;
+                pending_dt = 0;
             } else if (key == -5) {  /* Shift+Left = Previous page */
                 prev_page();
             } else if (key == -6) {  /* Shift+Right = Next page */
