@@ -40,7 +40,7 @@
 
 /* Page structure - each page has its own buffer and cursor */
 typedef struct {
-    char buffer[((VGA_HEIGHT - 1) * VGA_WIDTH)];  /* One screen worth of text */
+    char* buffer;      /* Dynamically allocated buffer */
     int length;        /* Current length of text in this page */
     int cursor_pos;    /* Cursor position in this page */
     int highlight_start;  /* Start of highlighted text in this page */
@@ -50,7 +50,7 @@ typedef struct {
 /* Page management */
 #define PAGE_SIZE ((VGA_HEIGHT - 1) * VGA_WIDTH)  /* Characters per page */
 #define MAX_PAGES 100
-Page pages[MAX_PAGES];
+Page* pages[MAX_PAGES];  /* Array of pointers to pages */
 int current_page = 0;
 int total_pages = 1;
 
@@ -62,6 +62,52 @@ int mouse_visible = 0;     /* Is mouse cursor visible */
 /* Forward declarations */
 void refresh_screen(void);
 void draw_nav_bar(void);
+
+/* Allocate a new page */
+Page* allocate_page(void) {
+    Page* page = (Page*)malloc(sizeof(Page));
+    if (page == NULL) {
+        serial_write_string("ERROR: Failed to allocate page structure\n");
+        return NULL;
+    }
+    
+    /* Allocate buffer for the page */
+    page->buffer = (char*)calloc(PAGE_SIZE, sizeof(char));
+    if (page->buffer == NULL) {
+        serial_write_string("ERROR: Failed to allocate page buffer\n");
+        /* Note: We can't free the page in bump allocator, but that's ok */
+        return NULL;
+    }
+    
+    /* Initialize page fields */
+    page->length = 0;
+    page->cursor_pos = 0;
+    page->highlight_start = 0;
+    page->highlight_end = 0;
+    
+    return page;
+}
+
+/* Initialize page array */
+void init_pages(void) {
+    int i;
+    
+    /* Clear all page pointers */
+    for (i = 0; i < MAX_PAGES; i++) {
+        pages[i] = NULL;
+    }
+    
+    /* Allocate the first page */
+    pages[0] = allocate_page();
+    if (pages[0] == NULL) {
+        /* Critical error - can't continue without at least one page */
+        serial_write_string("FATAL: Could not allocate initial page\n");
+        /* In a real OS, we'd panic here */
+    }
+    
+    current_page = 0;
+    total_pages = 1;
+}
 unsigned int get_stack_usage(void);
 
 /* Port I/O functions now in io.h */
@@ -82,9 +128,15 @@ void next_page(void) {
         /* Update total pages if we're creating a new page */
         if (current_page >= total_pages) {
             total_pages = current_page + 1;
-            /* Initialize new page */
-            pages[current_page].length = 0;
-            pages[current_page].cursor_pos = 0;
+            /* Allocate and initialize new page */
+            pages[current_page] = allocate_page();
+            if (pages[current_page] == NULL) {
+                serial_write_string("ERROR: Failed to allocate new page\n");
+                /* Revert to previous page */
+                current_page--;
+                total_pages--;
+                return;
+            }
         }
         /* Cursor position is already stored in the page structure */
         refresh_screen();
@@ -243,7 +295,7 @@ void draw_nav_bar(void) {
 /* Update hardware cursor position */
 void update_cursor(void) {
     /* Calculate visual position accounting for newlines and tabs */
-    Page *page = &pages[current_page];
+    Page *page = pages[current_page];
     int screen_pos = VGA_WIDTH;  /* Start after nav bar */
     int buf_pos = 0;
     
@@ -291,7 +343,7 @@ void refresh_screen(void) {
     draw_nav_bar();
     
     /* Get current page */
-    page = &pages[current_page];
+    page = pages[current_page];
     
     /* Start drawing text from line 1 (after nav bar) */
     screen_pos = VGA_WIDTH;  /* Skip first line */
@@ -356,7 +408,7 @@ void refresh_screen(void) {
 
 /* Insert a character at cursor position */
 void insert_char(char c) {
-    Page *page = &pages[current_page];
+    Page *page = pages[current_page];
     int line_start;
     int indent_count;
     int check_pos;
@@ -422,7 +474,7 @@ void insert_char(char c) {
 
 /* Delete character before cursor (backspace) */
 void delete_char(void) {
-    Page *page = &pages[current_page];
+    Page *page = pages[current_page];
     int i;
     
     if (page->cursor_pos == 0) return;
@@ -445,7 +497,7 @@ void clear_screen(void) {
     vga_clear_screen();
     
     /* Clear current page */
-    page = &pages[current_page];
+    page = pages[current_page];
     page->cursor_pos = 0;
     page->length = 0;
     update_cursor();
@@ -470,7 +522,7 @@ void init_mouse(void) {
 
 /* Move cursor */
 void move_cursor_left(void) {
-    Page *page = &pages[current_page];
+    Page *page = pages[current_page];
     if (page->cursor_pos > 0) {
         page->cursor_pos--;
         refresh_screen();
@@ -478,7 +530,7 @@ void move_cursor_left(void) {
 }
 
 void move_cursor_right(void) {
-    Page *page = &pages[current_page];
+    Page *page = pages[current_page];
     if (page->cursor_pos < page->length) {
         page->cursor_pos++;
         refresh_screen();
@@ -486,7 +538,7 @@ void move_cursor_right(void) {
 }
 
 void move_cursor_up(void) {
-    Page *page = &pages[current_page];
+    Page *page = pages[current_page];
     int line_start;
     int prev_line_start;
     int col;
@@ -522,7 +574,7 @@ void move_cursor_up(void) {
 }
 
 void move_cursor_down(void) {
-    Page *page = &pages[current_page];
+    Page *page = pages[current_page];
     int line_end;
     int line_start;
     int col;
@@ -691,7 +743,7 @@ void poll_mouse(void) {
             /* Normal text click handling */
             else {
                 /* Get current page */
-                Page *page = &pages[current_page];
+                Page *page = pages[current_page];
                 
                 int click_y = mouse_y - 1;
                 if (click_y >= 0 && click_y < VGA_HEIGHT - 1) {
@@ -994,17 +1046,12 @@ void kernel_main(void) {
     
     clear_screen();
     
-    /* Initialize page management */
-    current_page = 0;
-    total_pages = 1;  /* Start with 1 page */
-    
-    /* Initialize first page */
-    pages[0].length = 0;
-    pages[0].cursor_pos = 0;
+    /* Initialize page management - must be done AFTER memory init */
+    /* This is now handled by init_pages() */
     
     /* DEBUG: Test if highlighting works at all */
-    /* pages[0].highlight_start = 0;
-    pages[0].highlight_end = 5; */
+    /* pages[0]->highlight_start = 0;
+    pages[0]->highlight_end = 5; */
     
     /* Initialize debug serial port (COM2) */
     init_debug_serial();
@@ -1014,69 +1061,20 @@ void kernel_main(void) {
     /* Initialize memory allocator */
     init_memory();
     
-    /* Test memory allocation */
-    {
-        char* test1;
-        int* test2;
-        char* test3;
-        
-        serial_write_string("Testing memory allocator:\n");
-        
-        /* Test small allocation */
-        test1 = (char*)malloc(100);
-        if (test1) {
-            serial_write_string("  Allocated 100 bytes at ");
-            serial_write_hex((unsigned int)test1);
-            serial_write_string("\n");
-            
-            /* Write and read back to test */
-            memset(test1, 'A', 100);
-            test1[99] = '\0';
-        }
-        
-        /* Test aligned allocation */
-        test2 = (int*)malloc(sizeof(int) * 10);
-        if (test2) {
-            int i;
-            serial_write_string("  Allocated 40 bytes (10 ints) at ");
-            serial_write_hex((unsigned int)test2);
-            serial_write_string("\n");
-            
-            /* Test writing integers */
-            for (i = 0; i < 10; i++) {
-                test2[i] = i * 100;
-            }
-        }
-        
-        /* Test calloc (zeroed allocation) */
-        test3 = (char*)calloc(50, sizeof(char));
-        if (test3) {
-            int i;
-            int all_zero = 1;
-            serial_write_string("  Allocated and zeroed 50 bytes at ");
-            serial_write_hex((unsigned int)test3);
-            serial_write_string("\n");
-            
-            /* Verify it's zeroed */
-            for (i = 0; i < 50; i++) {
-                if (test3[i] != 0) {
-                    all_zero = 0;
-                    break;
-                }
-            }
-            serial_write_string("  Zero check: ");
-            serial_write_string(all_zero ? "PASSED\n" : "FAILED\n");
-        }
-        
-        /* Report heap usage */
-        serial_write_string("Heap usage: ");
-        serial_write_int(get_heap_used());
-        serial_write_string(" / ");
-        serial_write_int(get_heap_size());
-        serial_write_string(" bytes (");
-        serial_write_int((get_heap_used() * 100) / get_heap_size());
-        serial_write_string("% used)\n");
-    }
+    /* Initialize pages (must be after memory init) */
+    init_pages();
+    serial_write_string("Pages initialized: allocated first page at ");
+    serial_write_hex((unsigned int)pages[0]);
+    serial_write_string(" with buffer at ");
+    serial_write_hex((unsigned int)pages[0]->buffer);
+    serial_write_string("\n");
+    
+    /* Report initial heap usage */
+    serial_write_string("Initial heap usage: ");
+    serial_write_int(get_heap_used());
+    serial_write_string(" bytes (Page struct + ");
+    serial_write_int(PAGE_SIZE);
+    serial_write_string(" byte buffer)\n");
     
     /* Initialize timer system */
     init_timer();
