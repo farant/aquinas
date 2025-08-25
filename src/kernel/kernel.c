@@ -54,6 +54,15 @@ Page* pages[MAX_PAGES];  /* Array of pointers to pages */
 int current_page = 0;
 int total_pages = 1;
 
+/* Editor modes */
+typedef enum {
+    MODE_NORMAL,    /* Normal/command mode (vim-like) */
+    MODE_INSERT,    /* Insert mode for typing */
+    MODE_VISUAL     /* Visual mode for selection */
+} EditorMode;
+
+EditorMode editor_mode = MODE_INSERT;  /* Start in insert mode for now */
+
 /* Mouse state */
 int mouse_x = 40;          /* Mouse X position (0-79) */
 int mouse_y = 12;          /* Mouse Y position (0-24) */
@@ -62,6 +71,8 @@ int mouse_visible = 0;     /* Is mouse cursor visible */
 /* Forward declarations */
 void refresh_screen(void);
 void draw_nav_bar(void);
+void set_mode(EditorMode mode);
+const char* get_mode_string(void);
 
 /* Allocate a new page */
 Page* allocate_page(void) {
@@ -112,6 +123,26 @@ unsigned int get_stack_usage(void);
 
 /* Port I/O functions now in io.h */
 
+/* Mode management functions */
+void set_mode(EditorMode mode) {
+    editor_mode = mode;
+    /* Refresh to show new mode in status */
+    draw_nav_bar();
+}
+
+const char* get_mode_string(void) {
+    switch (editor_mode) {
+        case MODE_NORMAL:
+            return "NORMAL";
+        case MODE_INSERT:
+            return "INSERT";
+        case MODE_VISUAL:
+            return "VISUAL";
+        default:
+            return "UNKNOWN";
+    }
+}
+
 /* Switch to previous page */
 void prev_page(void) {
     if (current_page > 0) {
@@ -149,6 +180,8 @@ void draw_nav_bar(void) {
     unsigned short color;
     char page_info[40];
     char datetime_str[32];
+    const char* mode_str;
+    int mode_len = 0;
     int len = 0;
     int dt_len = 0;
     int page_num;
@@ -163,6 +196,22 @@ void draw_nav_bar(void) {
             color = VGA_COLOR_MOUSE;  /* Green background for mouse cursor */
         }
         vga_write_char(i, ' ', color);
+    }
+    
+    /* Display mode on the left side */
+    mode_str = get_mode_string();
+    /* Count mode string length */
+    for (mode_len = 0; mode_str[mode_len]; mode_len++);
+    
+    /* Write mode with padding */
+    for (i = 0; i < mode_len; i++) {
+        color = editor_mode == MODE_INSERT ? 0x7200 : /* Green bg for insert */
+                editor_mode == MODE_VISUAL ? 0x7400 : /* Red bg for visual */
+                0x7800;  /* Yellow bg for normal */
+        if (mouse_visible && mouse_y == 0 && mouse_x == i + 1) {
+            color = VGA_COLOR_MOUSE;
+        }
+        vga_write_char(i + 1, mode_str[i], color);
     }
     
     /* Format page info string */
@@ -618,6 +667,59 @@ void move_cursor_down(void) {
     refresh_screen();
 }
 
+/* Move cursor to next word */
+void move_word_forward(void) {
+    Page *page = pages[current_page];
+    int pos = page->cursor_pos;
+    
+    /* Skip current word (alphanumeric chars) */
+    while (pos < page->length && 
+           ((page->buffer[pos] >= 'a' && page->buffer[pos] <= 'z') ||
+            (page->buffer[pos] >= 'A' && page->buffer[pos] <= 'Z') ||
+            (page->buffer[pos] >= '0' && page->buffer[pos] <= '9'))) {
+        pos++;
+    }
+    
+    /* Skip whitespace and punctuation to find next word */
+    while (pos < page->length && 
+           !((page->buffer[pos] >= 'a' && page->buffer[pos] <= 'z') ||
+             (page->buffer[pos] >= 'A' && page->buffer[pos] <= 'Z') ||
+             (page->buffer[pos] >= '0' && page->buffer[pos] <= '9'))) {
+        pos++;
+    }
+    
+    page->cursor_pos = pos;
+    refresh_screen();
+}
+
+/* Move cursor to previous word */
+void move_word_backward(void) {
+    Page *page = pages[current_page];
+    int pos = page->cursor_pos;
+    
+    /* Move back one char to get off current position */
+    if (pos > 0) pos--;
+    
+    /* Skip whitespace and punctuation backwards */
+    while (pos > 0 && 
+           !((page->buffer[pos] >= 'a' && page->buffer[pos] <= 'z') ||
+             (page->buffer[pos] >= 'A' && page->buffer[pos] <= 'Z') ||
+             (page->buffer[pos] >= '0' && page->buffer[pos] <= '9'))) {
+        pos--;
+    }
+    
+    /* Move to beginning of word */
+    while (pos > 0 && 
+           ((page->buffer[pos-1] >= 'a' && page->buffer[pos-1] <= 'z') ||
+            (page->buffer[pos-1] >= 'A' && page->buffer[pos-1] <= 'Z') ||
+            (page->buffer[pos-1] >= '0' && page->buffer[pos-1] <= '9'))) {
+        pos--;
+    }
+    
+    page->cursor_pos = pos;
+    refresh_screen();
+}
+
 /* Old blocking keyboard handler - kept for reference but not used */
 /* keyboard_get_scancode was replaced by non-blocking keyboard_check */
 
@@ -925,6 +1027,7 @@ void poll_mouse(void) {
 /* Non-blocking keyboard check */
 /* Shift key state - must persist between calls */
 static int shift_pressed = 0;
+static int ctrl_pressed = 0;
 
 int keyboard_check(void) {
     /* Simple scancode to ASCII - extended to handle all keys properly */
@@ -973,6 +1076,15 @@ int keyboard_check(void) {
         return 0;
     }
     
+    /* Check for Ctrl press/release (left ctrl = 0x1D) */
+    if (keycode == 0x1D) {
+        ctrl_pressed = 1;
+        return 0;
+    } else if (keycode == 0x9D) {  /* Ctrl release */
+        ctrl_pressed = 0;
+        return 0;
+    }
+    
     /* Skip key release events (high bit set) */
     if (keycode & 0x80) {
         return 0;
@@ -999,6 +1111,12 @@ int keyboard_check(void) {
             c = scancode_map_shift[(int)keycode];
         } else {
             c = scancode_map[(int)keycode];
+        }
+        
+        /* Handle Ctrl combinations */
+        if (ctrl_pressed && c == '[') {
+            /* Ctrl-[ should be treated as ESC */
+            return 27;
         }
         
         /* Return character (positive value) */
@@ -1098,6 +1216,8 @@ void kernel_main(void) {
         /* Stack monitoring - report every 5 seconds using timer */
         static unsigned int last_stack_report = 0;
         static unsigned int last_clock_update = 0;
+        static int last_key = 0;
+        static unsigned int last_key_time = 0;
         unsigned int current_time = 0;
 
 
@@ -1145,24 +1265,112 @@ void kernel_main(void) {
         /* Check for keyboard input (non-blocking) */
         key = keyboard_check();
         
-        if (key == -1) {  /* Up arrow */
-            move_cursor_up();
-        } else if (key == -2) {  /* Down arrow */
-            move_cursor_down();
-        } else if (key == -3) {  /* Left arrow */
-            move_cursor_left();
-        } else if (key == -4) {  /* Right arrow */
-            move_cursor_right();
-        } else if (key == -5) {  /* Shift+Left = Previous page */
-            prev_page();
-        } else if (key == -6) {  /* Shift+Right = Next page */
-            next_page();
-        } else if (key == '\b') {  /* Backspace */
-            delete_char();
-        } else if (key == '\t') {  /* Tab - insert actual tab character */
-            insert_char('\t');
-        } else if (key > 0 && key != 27) {  /* Regular character, ignore ESC */
-            insert_char((char)key);
+        /* Handle 'f' buffering for potential 'fd' escape sequence */
+        if (editor_mode != MODE_NORMAL) {  /* Only check in INSERT/VISUAL modes */
+            if (last_key == 'f' && get_elapsed_ms(last_key_time) >= 300) {
+                /* 'f' timeout expired without 'd', insert the buffered 'f' */
+                if (editor_mode == MODE_INSERT) {
+                    insert_char('f');
+                }
+                last_key = 0;
+            }
+            
+            if (key == 'f') {
+                /* Buffer 'f' instead of inserting immediately */
+                last_key = 'f';
+                last_key_time = current_time;
+                key = 0;  /* Suppress the 'f' for now */
+            } else if (key == 'd' && last_key == 'f' && 
+                       get_elapsed_ms(last_key_time) < 300) {
+                /* 'fd' sequence detected - treat as ESC */
+                key = 27;
+                last_key = 0;  /* Clear buffer */
+            } else if (key > 0 && last_key == 'f') {
+                /* Different key after 'f', insert the buffered 'f' first */
+                if (editor_mode == MODE_INSERT) {
+                    insert_char('f');
+                }
+                last_key = 0;
+                /* Continue processing the current key normally */
+            }
+        }
+        
+        /* Handle mode-specific key bindings */
+        if (editor_mode == MODE_NORMAL) {
+            /* Normal mode - vim navigation and commands */
+            if (key == 'h' || key == -3) {  /* h or Left arrow */
+                move_cursor_left();
+            } else if (key == 'j' || key == -2) {  /* j or Down arrow */
+                move_cursor_down();
+            } else if (key == 'k' || key == -1) {  /* k or Up arrow */
+                move_cursor_up();
+            } else if (key == 'l' || key == -4) {  /* l or Right arrow */
+                move_cursor_right();
+            } else if (key == 'i') {  /* Enter insert mode */
+                set_mode(MODE_INSERT);
+            } else if (key == 'a') {  /* Append - move right then insert */
+                move_cursor_right();
+                set_mode(MODE_INSERT);
+            } else if (key == 'v') {  /* Enter visual mode */
+                Page *page = pages[current_page];
+                page->highlight_start = page->cursor_pos;
+                page->highlight_end = page->cursor_pos;
+                set_mode(MODE_VISUAL);
+            } else if (key == 'x') {  /* Delete character under cursor */
+                delete_char();
+            } else if (key == 'w') {  /* Move forward by word */
+                move_word_forward();
+            } else if (key == 'b') {  /* Move backward by word */
+                move_word_backward();
+            } else if (key == -5) {  /* Shift+Left = Previous page */
+                prev_page();
+            } else if (key == -6) {  /* Shift+Right = Next page */
+                next_page();
+            }
+        } else if (editor_mode == MODE_INSERT) {
+            /* Insert mode - regular typing */
+            if (key == 27) {  /* ESC - return to normal mode */
+                set_mode(MODE_NORMAL);
+            } else if (key == -1) {  /* Up arrow */
+                move_cursor_up();
+            } else if (key == -2) {  /* Down arrow */
+                move_cursor_down();
+            } else if (key == -3) {  /* Left arrow */
+                move_cursor_left();
+            } else if (key == -4) {  /* Right arrow */
+                move_cursor_right();
+            } else if (key == '\b') {  /* Backspace */
+                delete_char();
+            } else if (key == '\t') {  /* Tab - insert actual tab character */
+                insert_char('\t');
+            } else if (key > 0) {  /* Regular character */
+                insert_char((char)key);
+            }
+        } else if (editor_mode == MODE_VISUAL) {
+            /* Visual mode - selection and movement */
+            Page *page = pages[current_page];
+            if (key == 27) {  /* ESC - return to normal mode */
+                page->highlight_start = 0;
+                page->highlight_end = 0;
+                set_mode(MODE_NORMAL);
+                refresh_screen();
+            } else if (key == 'h' || key == -3) {  /* h or Left arrow */
+                move_cursor_left();
+                page->highlight_end = page->cursor_pos;
+                refresh_screen();
+            } else if (key == 'j' || key == -2) {  /* j or Down arrow */
+                move_cursor_down();
+                page->highlight_end = page->cursor_pos;
+                refresh_screen();
+            } else if (key == 'k' || key == -1) {  /* k or Up arrow */
+                move_cursor_up();
+                page->highlight_end = page->cursor_pos;
+                refresh_screen();
+            } else if (key == 'l' || key == -4) {  /* l or Right arrow */
+                move_cursor_right();
+                page->highlight_end = page->cursor_pos;
+                refresh_screen();
+            }
         }
     }
 }
