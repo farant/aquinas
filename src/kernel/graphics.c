@@ -384,23 +384,47 @@ void set_mode_03h(void) {
 void set_pixel(int x, int y, unsigned char color) {
     unsigned char *vga = (unsigned char *)VGA_GRAPHICS_BUFFER;
     unsigned int offset;
-    unsigned char plane;
+    unsigned char mask;
+    volatile unsigned char dummy;
     
     if (x < 0 || x >= VGA_WIDTH_12H || y < 0 || y >= VGA_HEIGHT_12H) {
         return;
     }
     
     offset = (y * (VGA_WIDTH_12H / 8)) + (x / 8);
-    plane = 0x80 >> (x & 7);
+    mask = 0x80 >> (x & 7);  /* Single pixel bit mask */
     
+    /* Use Set/Reset for consistency with draw_rectangle */
+    
+    /* Set Graphics Mode to Write Mode 0 */
+    outb(0x3CE, 0x05);
+    outb(0x3CF, 0x00);
+    
+    /* Enable all planes for writing */
     outb(0x3C4, 0x02);
     outb(0x3C5, 0x0F);
     
-    outb(0x3CE, 0x08);
-    outb(0x3CF, plane);
+    /* Set the color in the Set/Reset register */
+    outb(0x3CE, 0x00);
+    outb(0x3CF, color);
     
-    vga[offset] &= ~plane;
-    vga[offset] |= (color ? plane : 0);
+    /* Enable Set/Reset for all planes */
+    outb(0x3CE, 0x01);
+    outb(0x3CF, 0x0F);
+    
+    /* Set bit mask for single pixel */
+    outb(0x3CE, 0x08);
+    outb(0x3CF, mask);
+    
+    /* Read to latch, then write back */
+    dummy = vga[offset];
+    vga[offset] = dummy;
+    
+    /* Restore defaults */
+    outb(0x3CE, 0x01);  /* Disable Set/Reset */
+    outb(0x3CF, 0x00);
+    outb(0x3CE, 0x08);  /* Reset bit mask */
+    outb(0x3CF, 0xFF);
 }
 
 void draw_rectangle(int x, int y, int width, int height, unsigned char color) {
@@ -455,9 +479,9 @@ void draw_rectangle(int x, int y, int width, int height, unsigned char color) {
             mask = (0xFF >> (x1 & 7)) & (0xFF << (7 - (x2 & 7)));
             outb(0x3CE, 0x08);  /* Bit Mask Register */
             outb(0x3CF, mask);
-            /* Read to latch, then write (value doesn't matter with Set/Reset) */
+            /* Read to latch, then write back latched value */
             dummy = vga[offset + start_byte];
-            vga[offset + start_byte] = 0xFF;
+            vga[offset + start_byte] = dummy;  /* Write back latched value */
         } else {
             /* First byte (partial) */
             if (x1 & 7) {  /* Only if not byte-aligned */
@@ -465,29 +489,30 @@ void draw_rectangle(int x, int y, int width, int height, unsigned char color) {
                 outb(0x3CE, 0x08);  /* Bit Mask Register */
                 outb(0x3CF, mask);
                 dummy = vga[offset + start_byte];
-                vga[offset + start_byte] = 0xFF;
+                vga[offset + start_byte] = dummy;  /* Write back latched value */
                 start_byte++;
             }
             
-            /* Middle bytes (full bytes) */
-            if (start_byte <= end_byte) {
+            /* Middle bytes (full bytes) - only if there are bytes between first and last */
+            if (start_byte < end_byte) {  /* Changed condition - now correctly checks for middle bytes */
                 outb(0x3CE, 0x08);  /* Bit Mask Register */
                 outb(0x3CF, 0xFF);  /* All pixels in byte */
-                for (col = start_byte; col < end_byte; col++) {
-                    vga[offset + col] = 0xFF;  /* Value doesn't matter with Set/Reset */
-                }
+                /* Use memset for faster filling of middle bytes */
+                memset(&vga[offset + start_byte], 0x00, end_byte - start_byte);
             }
             
-            /* Last byte (partial) */
-            if ((x2 & 7) != 7) {  /* Only if not byte-aligned */
+            /* Last byte (partial or full) */
+            if ((x2 & 7) != 7) {  /* Last byte is partial */
                 mask = 0xFF << (7 - (x2 & 7));
                 outb(0x3CE, 0x08);  /* Bit Mask Register */
                 outb(0x3CF, mask);
                 dummy = vga[offset + end_byte];
-                vga[offset + end_byte] = 0xFF;
-            } else if (start_byte <= end_byte) {
+                vga[offset + end_byte] = dummy;  /* Write back latched value */
+            } else {
                 /* Last byte is full */
-                vga[offset + end_byte] = 0xFF;
+                outb(0x3CE, 0x08);  /* Bit Mask Register */
+                outb(0x3CF, 0xFF);  /* All pixels */
+                vga[offset + end_byte] = 0x00;  /* Convention: write 0 for full bytes */
             }
         }
     }
