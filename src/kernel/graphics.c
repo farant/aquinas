@@ -82,6 +82,87 @@ static unsigned char aquinas_palette[] = {
 #define COLOR_ACTIVE_PANE   14  /* Bright cyan */
 #define COLOR_VIM_VISUAL    8   /* Bright red */
 
+/* Text spacing constants */
+#define CHAR_WIDTH_TIGHT    8   /* No gap - characters touch */
+#define CHAR_WIDTH_NORMAL   9   /* 1 pixel gap - matches text mode */
+#define CHAR_WIDTH_LOOSE    10  /* 2 pixel gap - more readable */
+#define CHAR_HEIGHT         16  /* VGA font height */
+#define LINE_SPACING        18  /* Add 2 pixels between lines */
+
+/* Special value for transparent background */
+#define COLOR_TRANSPARENT   0xFF
+
+/* Text metrics structure */
+typedef struct {
+    int char_width;   /* Including spacing */
+    int char_height;
+    int line_height;  /* Including line spacing */
+} FontMetrics;
+
+/* Default font metrics matching text mode */
+static FontMetrics default_font = {9, 16, 18};
+
+/* Mouse cursor definitions */
+#define CURSOR_WIDTH 12
+#define CURSOR_HEIGHT 20
+#define CURSOR_HOTSPOT_X 0
+#define CURSOR_HOTSPOT_Y 0
+
+/* Classic arrow cursor bitmap - 12x20 pixels
+ * Each row is 2 bytes (12 bits used, 4 padding)
+ * 1 = draw pixel, 0 = transparent */
+static const unsigned char cursor_arrow[] = {
+    0x80, 0x00,  /* X........... */
+    0xC0, 0x00,  /* XX.......... */
+    0xE0, 0x00,  /* XXX......... */
+    0xF0, 0x00,  /* XXXX........ */
+    0xF8, 0x00,  /* XXXXX....... */
+    0xFC, 0x00,  /* XXXXXX...... */
+    0xFE, 0x00,  /* XXXXXXX..... */
+    0xFF, 0x00,  /* XXXXXXXX.... */
+    0xFF, 0x80,  /* XXXXXXXXX... */
+    0xFF, 0xC0,  /* XXXXXXXXXX.. */
+    0xFC, 0x00,  /* XXXXXX...... */
+    0xEE, 0x00,  /* XXX.XXX..... */
+    0xE7, 0x00,  /* XXX..XXX.... */
+    0xC3, 0x00,  /* XX....XX.... */
+    0xC3, 0x80,  /* XX....XXX... */
+    0x01, 0x80,  /* .......XX... */
+    0x01, 0x80,  /* .......XX... */
+    0x00, 0xC0,  /* ........XX.. */
+    0x00, 0xC0,  /* ........XX.. */
+    0x00, 0x00,  /* ............ */
+};
+
+/* Maximum cursor size for background buffer */
+#define MAX_CURSOR_SIZE (32 * 32)
+
+/* Cursor state structure */
+typedef struct {
+    int x, y;                    /* Current position */
+    int visible;                 /* Is cursor shown? */
+    const unsigned char *bitmap; /* Current cursor shape */
+    int width, height;
+    int hotspot_x, hotspot_y;   /* Click point offset */
+    unsigned char saved_background[MAX_CURSOR_SIZE];  /* Saved background pixels */
+    int saved_x, saved_y;        /* Position where background was saved */
+} MouseCursor;
+
+/* Global mouse cursor state */
+static MouseCursor mouse_cursor = {
+    320,                    /* x */
+    240,                    /* y */
+    0,                      /* visible - start hidden */
+    cursor_arrow,           /* bitmap */
+    CURSOR_WIDTH,           /* width */
+    CURSOR_HEIGHT,          /* height */
+    CURSOR_HOTSPOT_X,       /* hotspot_x */
+    CURSOR_HOTSPOT_Y,       /* hotspot_y */
+    {0},                    /* saved_background - initialized to 0 */
+    -1,                     /* saved_x - invalid initially */
+    -1                      /* saved_y - invalid initially */
+};
+
 /* Set the Aquinas custom palette for graphics mode */
 void set_aquinas_palette(void) {
     int i;
@@ -381,6 +462,34 @@ void set_mode_03h(void) {
     serial_write_string("Text mode 0x03 restored\n");
 }
 
+/* Read a pixel value from VGA memory */
+unsigned char read_pixel(int x, int y) {
+    unsigned char *vga = (unsigned char *)VGA_GRAPHICS_BUFFER;
+    unsigned int offset;
+    unsigned char mask;
+    unsigned char color = 0;
+    int plane;
+    
+    if (x < 0 || x >= VGA_WIDTH_12H || y < 0 || y >= VGA_HEIGHT_12H) {
+        return 0;
+    }
+    
+    offset = (y * (VGA_WIDTH_12H / 8)) + (x / 8);
+    mask = 0x80 >> (x & 7);
+    
+    /* Read from each plane */
+    for (plane = 0; plane < 4; plane++) {
+        outb(0x3CE, 0x04);  /* Graphics Controller: Read Map Select */
+        outb(0x3CF, plane); /* Select plane to read */
+        
+        if (vga[offset] & mask) {
+            color |= (1 << plane);
+        }
+    }
+    
+    return color;
+}
+
 void set_pixel(int x, int y, unsigned char color) {
     unsigned char *vga = (unsigned char *)VGA_GRAPHICS_BUFFER;
     unsigned int offset;
@@ -587,10 +696,19 @@ void draw_circle(int cx, int cy, int radius, unsigned char color) {
     }
 }
 
-void draw_char_from_bios_font(int x, int y, unsigned char c, unsigned char color) {
+/* Check if character is a box-drawing character */
+static int is_box_drawing(unsigned char c) {
+    return (c >= 0xB0 && c <= 0xDF);  /* Box drawing range in CP437 */
+}
+
+/* Draw character with proper spacing and optional background */
+void draw_char_extended(int x, int y, unsigned char c, 
+                        unsigned char fg, unsigned char bg,
+                        int char_spacing) {
     unsigned char *char_data;
     int row, col;
     unsigned char byte;
+    int extend_8th;
     
     if (saved_font == NULL) {
         return;  /* No font available */
@@ -598,20 +716,50 @@ void draw_char_from_bios_font(int x, int y, unsigned char c, unsigned char color
     
     /* In VGA, each character is 32 bytes (16 rows, with padding) */
     char_data = saved_font + (c * 32);
+    extend_8th = is_box_drawing(c);
     
-    for (row = 0; row < 16; row++) {
+    for (row = 0; row < CHAR_HEIGHT; row++) {
         byte = char_data[row];
+        
+        /* Draw normal 8 columns */
         for (col = 0; col < 8; col++) {
             if (byte & (0x80 >> col)) {
-                set_pixel(x + col, y + row, color);
+                set_pixel(x + col, y + row, fg);
+            } else if (bg != COLOR_TRANSPARENT) {
+                set_pixel(x + col, y + row, bg);
+            }
+        }
+        
+        /* Handle spacing beyond 8 pixels */
+        if (char_spacing > 8) {
+            /* 9th column: extend 8th for box chars, background otherwise */
+            if (extend_8th && (byte & 0x01)) {
+                set_pixel(x + 8, y + row, fg);
+            } else if (bg != COLOR_TRANSPARENT) {
+                set_pixel(x + 8, y + row, bg);
+            }
+            
+            /* Fill any additional spacing with background */
+            for (col = 9; col < char_spacing; col++) {
+                if (bg != COLOR_TRANSPARENT) {
+                    set_pixel(x + col, y + row, bg);
+                }
             }
         }
     }
 }
 
-void draw_string(int x, int y, const char *str, unsigned char color) {
-    int char_x = x;
-    const char *p = str;
+/* Legacy function - now calls extended version */
+void draw_char_from_bios_font(int x, int y, unsigned char c, unsigned char color) {
+    draw_char_extended(x, y, c, color, COLOR_TRANSPARENT, CHAR_WIDTH_TIGHT);
+}
+
+/* Draw text with configurable spacing and background */
+void draw_text_spaced(int x, int y, const char *text, 
+                     unsigned char fg, unsigned char bg,
+                     int char_spacing) {
+    int orig_x = x;
+    const char *p = text;
     
     if (saved_font == NULL) {
         return;  /* No font available */
@@ -620,15 +768,253 @@ void draw_string(int x, int y, const char *str, unsigned char color) {
     while (*p) {
         if (*p == '\n') {
             /* Handle newline */
-            char_x = x;
-            y += 16;  /* Move down one line (16 pixels for VGA font height) */
+            x = orig_x;
+            y += default_font.line_height;
+        } else if (*p == '\t') {
+            /* Align to next tab stop (every 8 characters) */
+            int chars_from_start = (x - orig_x) / char_spacing;
+            int next_tab = ((chars_from_start / 8) + 1) * 8;
+            x = orig_x + (next_tab * char_spacing);
         } else {
-            /* Draw the character */
-            draw_char_from_bios_font(char_x, y, (unsigned char)*p, color);
-            char_x += 8;  /* Move to next character position (8 pixels wide) */
+            /* Draw the character with proper spacing */
+            draw_char_extended(x, y, (unsigned char)*p, fg, bg, char_spacing);
+            x += char_spacing;
         }
         p++;
     }
+}
+
+/* Legacy draw_string - now uses proper spacing */
+void draw_string(int x, int y, const char *str, unsigned char color) {
+    draw_text_spaced(x, y, str, color, COLOR_TRANSPARENT, CHAR_WIDTH_NORMAL);
+}
+
+/* Text metrics helper functions */
+
+/* Convert text column/row to pixel coordinates */
+void text_pos_to_pixels(int col, int row, int *x, int *y) {
+    *x = col * default_font.char_width;
+    *y = row * default_font.line_height;
+}
+
+/* Get string width in pixels (single line only) */
+int get_text_width(const char *str) {
+    int width = 0;
+    while (*str && *str != '\n') {
+        width += default_font.char_width;
+        str++;
+    }
+    return width;
+}
+
+/* Center text horizontally */
+void draw_text_centered(int y, const char *text, 
+                        unsigned char fg, unsigned char bg) {
+    int width = get_text_width(text);
+    int x = (VGA_WIDTH_12H - width) / 2;
+    draw_text_spaced(x, y, text, fg, bg, default_font.char_width);
+}
+
+/* Draw text right-aligned */
+void draw_text_right_aligned(int right_x, int y, const char *text,
+                             unsigned char fg, unsigned char bg) {
+    int width = get_text_width(text);
+    int x = right_x - width;
+    draw_text_spaced(x, y, text, fg, bg, default_font.char_width);
+}
+
+/* Save background pixels where cursor will be drawn (including outline area) */
+static void save_cursor_background(int x, int y) {
+    int row, col;
+    int px, py;
+    int bg_index = 0;
+    int save_width = mouse_cursor.width + 2;   /* Add 1 pixel border on each side */
+    int save_height = mouse_cursor.height + 2;
+    
+    /* Save the position where background is being saved */
+    mouse_cursor.saved_x = x;
+    mouse_cursor.saved_y = y;
+    
+    /* Save a slightly larger area to include outline */
+    for (row = -1; row <= mouse_cursor.height; row++) {
+        for (col = -1; col <= mouse_cursor.width; col++) {
+            px = x + col - mouse_cursor.hotspot_x;
+            py = y + row - mouse_cursor.hotspot_y;
+            
+            /* Save all pixels in the extended cursor rectangle */
+            if (px >= 0 && px < VGA_WIDTH_12H && 
+                py >= 0 && py < VGA_HEIGHT_12H) {
+                mouse_cursor.saved_background[bg_index] = read_pixel(px, py);
+            } else {
+                mouse_cursor.saved_background[bg_index] = COLOR_BACKGROUND; /* Use background color */
+            }
+            bg_index++;
+        }
+    }
+}
+
+/* Restore background pixels where cursor was drawn */
+static void restore_cursor_background(void) {
+    int row, col;
+    int px, py;
+    int bg_index = 0;
+    
+    /* Only restore if we have a valid saved position */
+    if (mouse_cursor.saved_x < 0 || mouse_cursor.saved_y < 0) {
+        return;
+    }
+    
+    /* Restore the extended area (including outline) */
+    for (row = -1; row <= mouse_cursor.height; row++) {
+        for (col = -1; col <= mouse_cursor.width; col++) {
+            px = mouse_cursor.saved_x + col - mouse_cursor.hotspot_x;
+            py = mouse_cursor.saved_y + row - mouse_cursor.hotspot_y;
+            
+            /* Restore pixels that were within screen bounds */
+            if (px >= 0 && px < VGA_WIDTH_12H && 
+                py >= 0 && py < VGA_HEIGHT_12H) {
+                set_pixel(px, py, mouse_cursor.saved_background[bg_index]);
+            }
+            bg_index++;
+        }
+    }
+}
+
+/* Draw mouse cursor with black outline for better visibility */
+static void draw_cursor(int x, int y) {
+    int row, col;
+    int byte_index, bit_index;
+    int px, py;
+    int dx, dy;
+    
+    /* First pass: Draw black outline (1-pixel border around cursor shape) */
+    for (row = 0; row < mouse_cursor.height; row++) {
+        for (col = 0; col < mouse_cursor.width; col++) {
+            byte_index = (row * 2) + (col / 8);
+            bit_index = 7 - (col % 8);
+            
+            if (mouse_cursor.bitmap[byte_index] & (1 << bit_index)) {
+                /* Check all 8 neighbors for outline */
+                for (dy = -1; dy <= 1; dy++) {
+                    for (dx = -1; dx <= 1; dx++) {
+                        if (dx == 0 && dy == 0) continue;
+                        
+                        px = x + col + dx - mouse_cursor.hotspot_x;
+                        py = y + row + dy - mouse_cursor.hotspot_y;
+                        
+                        /* Draw black outline pixel if in bounds */
+                        if (px >= 0 && px < VGA_WIDTH_12H && 
+                            py >= 0 && py < VGA_HEIGHT_12H) {
+                            /* Check if neighbor is outside cursor shape */
+                            int n_col = col + dx;
+                            int n_row = row + dy;
+                            if (n_col < 0 || n_col >= mouse_cursor.width || 
+                                n_row < 0 || n_row >= mouse_cursor.height) {
+                                set_pixel(px, py, 0x00); /* Black outline */
+                            } else {
+                                int n_byte = (n_row * 2) + (n_col / 8);
+                                int n_bit = 7 - (n_col % 8);
+                                if (!(mouse_cursor.bitmap[n_byte] & (1 << n_bit))) {
+                                    set_pixel(px, py, 0x00); /* Black outline */
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /* Second pass: Draw white cursor body */
+    for (row = 0; row < mouse_cursor.height; row++) {
+        for (col = 0; col < mouse_cursor.width; col++) {
+            byte_index = (row * 2) + (col / 8);
+            bit_index = 7 - (col % 8);
+            
+            if (mouse_cursor.bitmap[byte_index] & (1 << bit_index)) {
+                px = x + col - mouse_cursor.hotspot_x;
+                py = y + row - mouse_cursor.hotspot_y;
+                
+                if (px >= 0 && px < VGA_WIDTH_12H && 
+                    py >= 0 && py < VGA_HEIGHT_12H) {
+                    set_pixel(px, py, 0x0F); /* White cursor */
+                }
+            }
+        }
+    }
+}
+
+/* Flag to temporarily disable cursor during critical updates */
+static int cursor_update_suspended = 0;
+
+/* Initialize mouse cursor */
+void init_mouse_cursor(void) {
+    mouse_cursor.visible = 0;
+    mouse_cursor.x = VGA_WIDTH_12H / 2;
+    mouse_cursor.y = VGA_HEIGHT_12H / 2;
+}
+
+/* Show the mouse cursor */
+void show_mouse_cursor(void) {
+    if (!mouse_cursor.visible) {
+        save_cursor_background(mouse_cursor.x, mouse_cursor.y);
+        draw_cursor(mouse_cursor.x, mouse_cursor.y);
+        mouse_cursor.visible = 1;
+    }
+}
+
+/* Hide the mouse cursor */
+void hide_mouse_cursor(void) {
+    if (mouse_cursor.visible) {
+        restore_cursor_background();
+        mouse_cursor.visible = 0;
+        mouse_cursor.saved_x = -1;
+        mouse_cursor.saved_y = -1;
+    }
+}
+
+/* Update mouse cursor position */
+void update_mouse_cursor(int new_x, int new_y) {
+    /* Clip to screen bounds first */
+    if (new_x < 0) new_x = 0;
+    if (new_y < 0) new_y = 0;
+    if (new_x >= VGA_WIDTH_12H) new_x = VGA_WIDTH_12H - 1;
+    if (new_y >= VGA_HEIGHT_12H) new_y = VGA_HEIGHT_12H - 1;
+    
+    /* Only update if position changed */
+    if (new_x == mouse_cursor.x && new_y == mouse_cursor.y) {
+        return;
+    }
+    
+    /* Skip updates if cursor is suspended */
+    if (cursor_update_suspended) {
+        mouse_cursor.x = new_x;
+        mouse_cursor.y = new_y;
+        return;
+    }
+    
+    if (mouse_cursor.visible) {
+        /* Restore old background */
+        restore_cursor_background();
+        
+        /* Update position */
+        mouse_cursor.x = new_x;
+        mouse_cursor.y = new_y;
+        
+        /* Save new background and draw cursor */
+        save_cursor_background(mouse_cursor.x, mouse_cursor.y);
+        draw_cursor(mouse_cursor.x, mouse_cursor.y);
+    } else {
+        /* Just update position if not visible */
+        mouse_cursor.x = new_x;
+        mouse_cursor.y = new_y;
+    }
+}
+
+/* Get current mouse cursor position */
+void get_mouse_cursor_pos(int *x, int *y) {
+    *x = mouse_cursor.x;
+    *y = mouse_cursor.y;
 }
 
 void clear_graphics_screen(unsigned char color) {
@@ -648,6 +1034,55 @@ void clear_graphics_screen(unsigned char color) {
     }
 }
 
+/* Global flag to indicate graphics mode is active */
+int graphics_mode_active = 0;
+
+/* Separate pixel-level mouse coordinates for graphics mode */
+static int graphics_mouse_x = 320;
+static int graphics_mouse_y = 240;
+static float mouse_x_accumulator = 0.0;
+static float mouse_y_accumulator = 0.0;
+
+/* Handle raw mouse movement in graphics mode - called from kernel.c 
+ * Takes raw mouse deltas instead of text coordinates */
+void handle_graphics_mouse_raw(signed char dx, signed char dy) {
+    float scale = 1.5;  /* Sensitivity adjustment */
+    int move_x, move_y;
+    
+    if (!graphics_mode_active) return;
+    
+    /* Accumulate fractional movement for smoother motion */
+    mouse_x_accumulator += dx * scale;
+    mouse_y_accumulator += dy * scale;  /* Positive dy moves down */
+    
+    /* Extract integer pixels to move */
+    move_x = (int)mouse_x_accumulator;
+    move_y = (int)mouse_y_accumulator;
+    
+    /* Keep fractional part */
+    mouse_x_accumulator -= move_x;
+    mouse_y_accumulator -= move_y;
+    
+    /* Update position with bounds checking */
+    graphics_mouse_x += move_x;
+    graphics_mouse_y += move_y;
+    
+    if (graphics_mouse_x < 0) graphics_mouse_x = 0;
+    if (graphics_mouse_x >= VGA_WIDTH_12H) graphics_mouse_x = VGA_WIDTH_12H - 1;
+    if (graphics_mouse_y < 0) graphics_mouse_y = 0;
+    if (graphics_mouse_y >= VGA_HEIGHT_12H) graphics_mouse_y = VGA_HEIGHT_12H - 1;
+    
+    /* Update cursor */
+    update_mouse_cursor(graphics_mouse_x, graphics_mouse_y);
+}
+
+/* Legacy function for compatibility */
+void handle_graphics_mouse_move(int text_x, int text_y) {
+    /* Not used anymore - we use raw mouse input instead */
+    (void)text_x;
+    (void)text_y;
+}
+
 void graphics_demo(void) {
     int running = 1;
     int animation_frame = 0;
@@ -659,6 +1094,8 @@ void graphics_demo(void) {
     int prev_y_pos = 0;
     int color = 1;
     int i;
+    extern int mouse_x, mouse_y;  /* Access text-mode mouse coords from kernel.c */
+    extern void poll_mouse(void);  /* Mouse polling function from kernel.c */
     
     /* Frame timing constants */
     #define FRAME_DELAY_MS 50  /* 50ms = 20 FPS */
@@ -735,12 +1172,31 @@ void graphics_demo(void) {
     /* Instructions */
     draw_string(20, 460, "Press ESC to exit graphics mode", COLOR_TEXT_DIM);
     
+    /* Initialize mouse cursor */
+    init_mouse_cursor();
+    graphics_mode_active = 1;  /* Set flag for mouse handler */
+    
+    /* Reset graphics mouse position to center */
+    graphics_mouse_x = VGA_WIDTH_12H / 2;
+    graphics_mouse_y = VGA_HEIGHT_12H / 2;
+    mouse_x_accumulator = 0.0;
+    mouse_y_accumulator = 0.0;
+    
+    show_mouse_cursor();
+    
     /* Initialize timing */
     last_frame_time = get_ticks();
     
     while (running) {
-        /* Check for ESC key to exit */
-        if (inb(0x60) == 0x01) {
+        unsigned char scancode;
+        
+        /* Poll for mouse movement */
+        poll_mouse();
+        
+        /* Check for keyboard input - only handle ESC to exit */
+        scancode = inb(0x60);
+        
+        if (scancode == 0x01) { /* ESC - exit */
             running = 0;
         }
         
@@ -749,6 +1205,12 @@ void graphics_demo(void) {
         
         /* Update animation only if enough time has passed */
         if (current_time - last_frame_time >= FRAME_DELAY_MS) {
+            /* Temporarily hide cursor during animation update */
+            if (mouse_cursor.visible) {
+                restore_cursor_background();
+                cursor_update_suspended = 1;
+            }
+            
             /* Clear previous animated rectangle using PREVIOUS position */
             if (animation_frame > 0) {  /* Don't clear on first frame */
                 draw_rectangle(380 + prev_x_pos, 240 + prev_y_pos, 60, 40, COLOR_BACKGROUND);
@@ -777,10 +1239,21 @@ void graphics_demo(void) {
             /* Draw new animated rectangle */
             draw_rectangle(380 + x_pos, 240 + y_pos, 60, 40, color);
             
+            /* Re-enable cursor and redraw it */
+            if (mouse_cursor.visible) {
+                cursor_update_suspended = 0;
+                save_cursor_background(mouse_cursor.x, mouse_cursor.y);
+                draw_cursor(mouse_cursor.x, mouse_cursor.y);
+            }
+            
             /* Update last frame time */
             last_frame_time = current_time;
         }
     }
+    
+    /* Hide cursor before switching modes */
+    hide_mouse_cursor();
+    graphics_mode_active = 0;  /* Clear flag */
     
     set_mode_03h();
     

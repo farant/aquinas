@@ -232,6 +232,11 @@ void draw_nav_bar(void) {
     int start_pos;
     rtc_time_t now;
     
+    /* Don't draw nav bar when in graphics mode */
+    if (graphics_mode_active) {
+        return;
+    }
+    
     /* Fill top line with white background (inverse colors) */
     for (i = 0; i < VGA_WIDTH; i++) {
         color = VGA_COLOR_NAV_BAR;  /* Gray background, black text */
@@ -452,6 +457,11 @@ void refresh_screen(void) {
     int col;
     int j;
     unsigned short tab_color;
+    
+    /* Don't draw text mode content when in graphics mode */
+    if (graphics_mode_active) {
+        return;
+    }
     
     /* Clear only the text area (not nav bar) to prevent flickering */
     for (i = VGA_WIDTH; i < VGA_WIDTH * VGA_HEIGHT; i++) {
@@ -1560,6 +1570,13 @@ void poll_mouse(void) {
         /* Check for left click BEFORE updating position */
         /* This uses the position where the button was pressed, not where mouse moved to */
         if (left_button && !prev_left_button) {
+            /* Skip all click handling if in graphics mode */
+            if (graphics_mode_active) {
+                /* Just update button state and continue */
+                prev_left_button = left_button;
+                continue;
+            }
+            
             /* Capture click at current position before any movement */
             click_x = mouse_x;
             click_y = mouse_y;
@@ -1697,6 +1714,14 @@ void poll_mouse(void) {
         /* Only update mouse position if button is NOT held down */
         /* This prevents cursor movement during clicks/drags */
         if (!left_button) {
+            /* In graphics mode, send raw deltas directly */
+            if (graphics_mode_active) {
+                extern void handle_graphics_mouse_raw(signed char dx, signed char dy);
+                handle_graphics_mouse_raw((signed char)dx, (signed char)dy);
+                /* Skip text mode processing */
+                continue;
+            }
+            
             /* Accumulate mouse movements for smooth, responsive control */
             /* This ensures even tiny movements eventually register */
             accumulated_dx += dx;
@@ -1762,7 +1787,12 @@ void poll_mouse(void) {
         
         /* Refresh if mouse moved */
         if (mouse_x != old_x || mouse_y != old_y) {
-            refresh_screen();
+            /* If in graphics mode, update graphics cursor instead */
+            if (graphics_mode_active) {
+                handle_graphics_mouse_move(mouse_x, mouse_y);
+            } else {
+                refresh_screen();
+            }
         }
         
         /* Update previous button state for next frame */
@@ -2014,6 +2044,11 @@ void kernel_main(void) {
         
         /* Check for keyboard input (non-blocking) */
         key = keyboard_check();
+        
+        /* Skip all keyboard processing if in graphics mode (ESC handled in graphics_demo) */
+        if (graphics_mode_active) {
+            continue;
+        }
         
         /* Handle 'fd' escape sequence - insert 'f' immediately, delete if 'd' follows */
         if (editor_mode == MODE_INSERT) {
