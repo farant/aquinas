@@ -36,6 +36,92 @@ static unsigned char ega_palette[] = {
     0x3f,0x15,0x15, 0x3f,0x15,0x3f, 0x3f,0x3f,0x15, 0x3f,0x3f,0x3f
 };
 
+/* Aquinas custom palette for graphics mode
+ * Emphasizes grays, reds, yellow-golds, and cyans
+ * Format: R,G,B with 6-bit values (0-63)
+ */
+static unsigned char aquinas_palette[] = {
+    /* Grayscale foundation (6 shades) */
+    0x00, 0x00, 0x00,  /* 0: Black */
+    0x10, 0x10, 0x10,  /* 1: Dark gray */
+    0x20, 0x20, 0x20,  /* 2: Medium dark gray */
+    0x30, 0x30, 0x30,  /* 3: Medium gray */
+    0x38, 0x38, 0x38,  /* 4: Light gray */
+    0x3F, 0x3F, 0x3F,  /* 5: White */
+    
+    /* Reds (3 shades) */
+    0x20, 0x08, 0x08,  /* 6: Dark red */
+    0x30, 0x0C, 0x0C,  /* 7: Medium red */
+    0x3F, 0x10, 0x10,  /* 8: Bright red */
+    
+    /* Yellow-golds (3 shades) */
+    0x28, 0x20, 0x08,  /* 9:  Dark gold */
+    0x38, 0x30, 0x10,  /* 10: Medium gold */
+    0x3F, 0x38, 0x18,  /* 11: Bright yellow-gold */
+    
+    /* Cyans (3 shades) */
+    0x08, 0x20, 0x28,  /* 12: Dark cyan */
+    0x10, 0x30, 0x38,  /* 13: Medium cyan */
+    0x18, 0x38, 0x3F,  /* 14: Bright cyan */
+    
+    /* Special purpose */
+    0x2C, 0x28, 0x20   /* 15: Warm gray (for text backgrounds) */
+};
+
+/* UI Color definitions for Aquinas palette */
+#define COLOR_BACKGROUND     3   /* Medium gray */
+#define COLOR_TEXT          5   /* White */
+#define COLOR_TEXT_DIM      1   /* Dark gray */
+#define COLOR_BORDER        4   /* Light gray */
+#define COLOR_HIGHLIGHT     14  /* Bright cyan */
+#define COLOR_SELECTION     8   /* Bright red */
+#define COLOR_CURSOR        11  /* Bright yellow-gold */
+#define COLOR_LINK          13  /* Medium cyan */
+#define COLOR_COMMAND       10  /* Medium gold */
+#define COLOR_STATUS_BAR    2   /* Medium dark gray */
+#define COLOR_ACTIVE_PANE   14  /* Bright cyan */
+#define COLOR_VIM_VISUAL    8   /* Bright red */
+
+/* Set the Aquinas custom palette for graphics mode */
+void set_aquinas_palette(void) {
+    int i;
+    
+    /* First, reset attribute controller flip-flop */
+    inb(0x3DA);
+    
+    /* Set attribute controller palette registers to map straight through
+     * This ensures color index N maps to DAC color N */
+    for (i = 0; i < 16; i++) {
+        outb(0x3C0, i);      /* Select palette register i */
+        outb(0x3C0, i);      /* Map to DAC color i */
+    }
+    
+    /* Set the Attribute Mode Control register for graphics */
+    outb(0x3C0, 0x10);
+    outb(0x3C0, 0x01);  /* Graphics mode, 1 pixel per clock */
+    
+    /* Enable video display */
+    outb(0x3C0, 0x20);
+    
+    /* Now set the DAC palette with our custom colors */
+    for (i = 0; i < 16; i++) {
+        outb(0x3C8, i);  /* Select DAC color index */
+        outb(0x3C9, aquinas_palette[i * 3]);      /* Red */
+        outb(0x3C9, aquinas_palette[i * 3 + 1]);  /* Green */
+        outb(0x3C9, aquinas_palette[i * 3 + 2]);  /* Blue */
+    }
+    
+    /* Fill remaining DAC entries (16-255) with black */
+    for (i = 16; i < 256; i++) {
+        outb(0x3C8, i);
+        outb(0x3C9, 0x00);  /* R */
+        outb(0x3C9, 0x00);  /* G */
+        outb(0x3C9, 0x00);  /* B */
+    }
+    
+    serial_write_string("Set Aquinas custom palette with proper attribute mapping\n");
+}
+
 /* Restore the standard EGA/VGA DAC palette */
 void restore_dac_palette(void) {
     int i;
@@ -416,22 +502,46 @@ void graphics_demo(void) {
     
     set_mode_12h();
     
-    clear_graphics_screen(0);
+    /* Set our custom Aquinas palette */
+    set_aquinas_palette();
     
-    /* Draw static rectangles */
-    draw_rectangle(50, 50, 100, 100, 1);
-    draw_rectangle(200, 50, 150, 100, 2);
-    draw_rectangle(400, 50, 100, 150, 3);
+    /* Clear screen with medium gray background */
+    clear_graphics_screen(COLOR_BACKGROUND);
     
-    draw_rectangle(50, 200, 200, 50, 4);
-    draw_rectangle(300, 200, 100, 100, 5);
-    draw_rectangle(450, 200, 150, 80, 6);
+    /* Draw UI demo with the new palette */
+    /* Grayscale showcase */
+    draw_rectangle(20, 20, 60, 60, 0);   /* Black */
+    draw_rectangle(90, 20, 60, 60, 1);   /* Dark gray */
+    draw_rectangle(160, 20, 60, 60, 2);  /* Medium dark gray */
+    draw_rectangle(230, 20, 60, 60, 3);  /* Medium gray */
+    draw_rectangle(300, 20, 60, 60, 4);  /* Light gray */
+    draw_rectangle(370, 20, 60, 60, 5);  /* White */
     
-    draw_rectangle(100, 350, 80, 80, 9);
-    draw_rectangle(250, 350, 120, 60, 10);
-    draw_rectangle(400, 350, 160, 90, 12);
+    /* Red showcase */
+    draw_rectangle(20, 100, 100, 50, 6);   /* Dark red */
+    draw_rectangle(130, 100, 100, 50, 7);  /* Medium red */
+    draw_rectangle(240, 100, 100, 50, 8);  /* Bright red */
     
-    draw_rectangle(260, 10, 120, 20, 15);
+    /* Gold showcase */
+    draw_rectangle(20, 170, 100, 50, 9);   /* Dark gold */
+    draw_rectangle(130, 170, 100, 50, 10); /* Medium gold */
+    draw_rectangle(240, 170, 100, 50, 11); /* Bright yellow-gold */
+    
+    /* Cyan showcase */
+    draw_rectangle(20, 240, 100, 50, 12);  /* Dark cyan */
+    draw_rectangle(130, 240, 100, 50, 13); /* Medium cyan */
+    draw_rectangle(240, 240, 100, 50, 14); /* Bright cyan */
+    
+    /* UI element demos */
+    draw_rectangle(10, 320, 620, 30, COLOR_STATUS_BAR);    /* Status bar */
+    draw_rectangle(15, 325, 100, 20, COLOR_COMMAND);       /* Command button */
+    draw_rectangle(120, 325, 100, 20, COLOR_LINK);         /* Link button */
+    draw_rectangle(225, 325, 100, 20, COLOR_HIGHLIGHT);    /* Highlighted item */
+    draw_rectangle(330, 325, 100, 20, COLOR_SELECTION);    /* Selected item */
+    
+    /* Border demo */
+    draw_rectangle(450, 100, 150, 100, COLOR_BORDER);
+    draw_rectangle(455, 105, 140, 90, COLOR_BACKGROUND);
     
     /* Initialize timing */
     last_frame_time = get_ticks();
@@ -447,17 +557,27 @@ void graphics_demo(void) {
         
         /* Update animation only if enough time has passed */
         if (current_time - last_frame_time >= FRAME_DELAY_MS) {
-            /* Clear previous animated rectangle (draw black over it) */
-            draw_rectangle(290 + x_pos, 240 + y_pos, 60, 40, 0);
+            /* Clear previous animated rectangle (restore background) */
+            draw_rectangle(380 + x_pos, 240 + y_pos, 60, 40, COLOR_BACKGROUND);
             
             /* Update position and color */
             animation_frame++;
             x_pos = (animation_frame * 2) % 40;  /* Move 2 pixels per frame */
-            y_pos = (animation_frame * 2) % 30;
-            color = (animation_frame / 5) % 16;  /* Change color every 5 frames */
+            y_pos = (animation_frame) % 30;      /* Move 1 pixel per frame vertically */
+            
+            /* Cycle through cyan and gold colors for animation */
+            if ((animation_frame / 10) % 4 == 0) {
+                color = COLOR_CURSOR;       /* Bright yellow-gold */
+            } else if ((animation_frame / 10) % 4 == 1) {
+                color = COLOR_HIGHLIGHT;    /* Bright cyan */
+            } else if ((animation_frame / 10) % 4 == 2) {
+                color = COLOR_COMMAND;      /* Medium gold */
+            } else {
+                color = COLOR_LINK;         /* Medium cyan */
+            }
             
             /* Draw new animated rectangle */
-            draw_rectangle(290 + x_pos, 240 + y_pos, 60, 40, color);
+            draw_rectangle(380 + x_pos, 240 + y_pos, 60, 40, color);
             
             /* Update last frame time */
             last_frame_time = current_time;

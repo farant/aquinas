@@ -15,5 +15,6 @@ void clear_graphics_screen(unsigned char color);
 void save_vga_font(void);
 void restore_vga_font(void);
 void restore_dac_palette(void);
+void set_aquinas_palette(void);
 
 #endif
