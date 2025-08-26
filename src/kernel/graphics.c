@@ -3,6 +3,7 @@
 #include "serial.h"
 #include "memory.h"
 #include "timer.h"
+#include "font_6x8.h"  /* HP 100LX 6x8 pixel font */
 
 /* VGA font is stored in plane 2 at 0xA0000
  * We need to save it before switching to graphics mode
@@ -750,6 +751,55 @@ void draw_char_extended(int x, int y, unsigned char c,
     }
 }
 
+/* Draw character using 6x8 font */
+void draw_char_6x8(int x, int y, unsigned char c,
+                   unsigned char fg, unsigned char bg) {
+    const unsigned char *char_data;
+    int row, col;
+    unsigned char byte;
+    
+    /* Get character bitmap from 6x8 font */
+    char_data = font_hp100lx_6x8[c];
+    
+    for (row = 0; row < FONT_hp100lx_HEIGHT; row++) {
+        byte = char_data[row];
+        
+        /* Draw 6 columns */
+        for (col = 0; col < FONT_hp100lx_WIDTH; col++) {
+            if (byte & (0x80 >> col)) {
+                set_pixel(x + col, y + row, fg);
+            } else if (bg != COLOR_TRANSPARENT) {
+                set_pixel(x + col, y + row, bg);
+            }
+        }
+    }
+}
+
+/* Draw string using 6x8 font */
+void draw_string_6x8(int x, int y, const char *str,
+                     unsigned char fg, unsigned char bg) {
+    int orig_x = x;
+    const char *p = str;
+    
+    while (*p) {
+        if (*p == '\n') {
+            /* Handle newline */
+            x = orig_x;
+            y += FONT_hp100lx_HEIGHT;
+        } else if (*p == '\t') {
+            /* Tab: advance to next multiple of 4 characters */
+            int chars_from_start = (x - orig_x) / FONT_hp100lx_WIDTH;
+            int next_tab = ((chars_from_start / 4) + 1) * 4;
+            x = orig_x + (next_tab * FONT_hp100lx_WIDTH);
+        } else {
+            /* Draw character */
+            draw_char_6x8(x, y, (unsigned char)*p, fg, bg);
+            x += FONT_hp100lx_WIDTH;
+        }
+        p++;
+    }
+}
+
 /* Legacy function - now calls extended version */
 void draw_char_from_bios_font(int x, int y, unsigned char c, unsigned char color) {
     draw_char_extended(x, y, c, color, COLOR_TRANSPARENT, CHAR_WIDTH_TIGHT);
@@ -1112,8 +1162,9 @@ void graphics_demo(void) {
     /* Clear screen with medium gray background */
     clear_graphics_screen(COLOR_BACKGROUND);
     
-    /* Draw title text */
+    /* Draw title text with both fonts */
     draw_string(20, 5, "Aquinas Graphics Mode Demo", COLOR_TEXT);
+    draw_string_6x8(20, 25, "Now with 6x8 font support! (106x60 chars @ 640x480)", COLOR_HIGHLIGHT, COLOR_TRANSPARENT);
     
     /* Draw UI demo with the new palette */
     /* Grayscale showcase */
@@ -1169,6 +1220,10 @@ void graphics_demo(void) {
     draw_circle(560, 380, 30, COLOR_LINK);
     draw_circle(560, 380, 20, COLOR_COMMAND);
     draw_circle(560, 380, 10, COLOR_SELECTION);
+    
+    /* Font comparison */
+    draw_string_6x8(20, 430, "6x8: The quick brown fox jumps over the lazy dog 0123456789", COLOR_TEXT, COLOR_TRANSPARENT);
+    draw_string(20, 440, "8x16: The quick brown fox jumps over the lazy dog", COLOR_TEXT);
     
     /* Instructions */
     draw_string(20, 460, "Press ESC to exit graphics mode", COLOR_TEXT_DIM);

@@ -29,6 +29,10 @@ void draw_char_from_bios_font(int x, int y, unsigned char c, unsigned char color
 void draw_char_extended(int x, int y, unsigned char c, unsigned char fg, unsigned char bg, int char_spacing);
 void draw_string(int x, int y, const char *str, unsigned char color);
 void draw_text_spaced(int x, int y, const char *text, unsigned char fg, unsigned char bg, int char_spacing);
+
+/* 6x8 font functions */
+void draw_char_6x8(int x, int y, unsigned char c, unsigned char fg, unsigned char bg);
+void draw_string_6x8(int x, int y, const char *str, unsigned char fg, unsigned char bg);
 void draw_text_centered(int y, const char *text, unsigned char fg, unsigned char bg);
 void draw_text_right_aligned(int right_x, int y, const char *text, unsigned char fg, unsigned char bg);
 void text_pos_to_pixels(int col, int row, int *x, int *y);
