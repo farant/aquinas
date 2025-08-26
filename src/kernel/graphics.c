@@ -231,22 +231,22 @@ void set_mode_03h(void) {
     
     serial_write_string("Switching back to text mode 0x03...\n");
     
-    /* First, do a sequencer reset */
-    outb(0x3C4, 0x00);
-    outb(0x3C5, 0x01);  /* Assert reset */
-    
-    /* Miscellaneous Output Register */
+    /* Miscellaneous Output Register first - set before other registers */
     outb(0x3C2, 0x67);  /* 0x67 for 80x25 color text mode */
     
+    /* Sequencer reset and programming */
+    outb(0x3C4, 0x00);
+    outb(0x3C5, 0x01);  /* Assert synchronous reset */
+    
     /* Program sequencer - matching SeaBIOS sequ_03 */
-    outb(0x3C4, 0x01); outb(0x3C5, 0x03);  /* 9 dot clocks per char - CRITICAL! */
+    outb(0x3C4, 0x01); outb(0x3C5, 0x00);  /* 0x00 = 9-dot characters enabled! */
     outb(0x3C4, 0x02); outb(0x3C5, 0x03);  /* Map mask - planes 0 and 1 for text */
     outb(0x3C4, 0x03); outb(0x3C5, 0x00);  /* Character map select */
     outb(0x3C4, 0x04); outb(0x3C5, 0x02);  /* Memory mode - odd/even addressing */
     
     /* Release sequencer reset */
     outb(0x3C4, 0x00);
-    outb(0x3C5, 0x03);  /* De-assert reset */
+    outb(0x3C5, 0x03);  /* De-assert reset - both reset bits cleared */
     
     /* Unlock CRTC */
     outb(0x3D4, 0x11);
@@ -258,14 +258,14 @@ void set_mode_03h(void) {
         outb(0x3D5, crtc_vals[i]);
     }
     
-    /* Graphics Controller - critical for text mode! */
+    /* Graphics Controller - matching SeaBIOS values for text mode */
     outb(0x3CE, 0x00); outb(0x3CF, 0x00);  /* Set/Reset */
     outb(0x3CE, 0x01); outb(0x3CF, 0x00);  /* Enable Set/Reset */
     outb(0x3CE, 0x02); outb(0x3CF, 0x00);  /* Color Compare */
     outb(0x3CE, 0x03); outb(0x3CF, 0x00);  /* Data Rotate */
     outb(0x3CE, 0x04); outb(0x3CF, 0x00);  /* Read Map Select */
-    outb(0x3CE, 0x05); outb(0x3CF, 0x10);  /* Graphics Mode - odd/even, no chain */
-    outb(0x3CE, 0x06); outb(0x3CF, 0x0E);  /* Memory Map Mode - B8000-BFFFF, text mode */
+    outb(0x3CE, 0x05); outb(0x3CF, 0x10);  /* Graphics Mode - 0x10 for text (host odd/even) */
+    outb(0x3CE, 0x06); outb(0x3CF, 0x0E);  /* Misc - 0x0E (B8000 map, chain odd/even) */
     outb(0x3CE, 0x07); outb(0x3CF, 0x00);  /* Color Don't Care */
     outb(0x3CE, 0x08); outb(0x3CF, 0xFF);  /* Bit Mask */
     
@@ -281,7 +281,7 @@ void set_mode_03h(void) {
     
     /* Mode Control - matching SeaBIOS actl_01 */
     outb(0x3C0, 0x10); 
-    outb(0x3C0, 0x08);  /* Graphics mode 0, text mode, blink enable */
+    outb(0x3C0, 0x0C);  /* Bit 3=blink, bit 2=9th dot handling, bit 0=text mode */
     
     outb(0x3C0, 0x11); outb(0x3C0, 0x00);  /* Overscan color */
     outb(0x3C0, 0x12); outb(0x3C0, 0x0F);  /* Color plane enable */
