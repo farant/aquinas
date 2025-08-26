@@ -71,6 +71,7 @@ make debug-all   # Maximum verbosity
 ### Text Editor
 - **Page-based editing**: Each page holds one screen of text (24 lines × 80 characters)
 - **Independent pages**: Each page has its own buffer and cursor position
+- **Page naming**: Pages can be named using the $rename command
 - **Auto-indentation**: Maintains indentation when pressing Enter
 - **Tab support**: Tab key inserts actual tab characters (displayed as 2 spaces)
 
@@ -83,7 +84,7 @@ make debug-all   # Maximum verbosity
 ### Keyboard Features
 - Full keyboard support with shift key for capitals and symbols
 - Arrow keys for cursor movement within pages
-- **Shift + Left/Right Arrow**: Navigate between pages
+- **Shift + Left/Right Arrow**: Navigate between pages (works in all modes)
 - Backspace for character deletion
 - Non-blocking input (keyboard and mouse work simultaneously)
 
@@ -115,11 +116,37 @@ The editor includes vim-style modal editing with three modes:
 - **Tab**: Insert tab character (displayed as 2 spaces)
 - **Enter**: New line with auto-indentation
 - **ESC**, **Ctrl+[**, or **fd** (typed quickly): Return to normal mode
+- **Shift + Left/Right Arrow**: Navigate between pages
 
 #### Visual Mode
 - **h/j/k/l** or **Arrow keys**: Extend selection
 - **ESC**: Return to normal mode (cancels selection)
 - Text selection is highlighted in red
+
+### Interactive Commands & Links
+
+The editor supports Acme-inspired interactive elements that execute when clicked with the mouse:
+
+#### Commands (start with $)
+Commands perform actions and can insert output into the text:
+
+- **$date**: Inserts the current date and time (MM/DD/YYYY HH:MM format)
+- **$rename [name]**: Sets the name of the current page (appears in navigation bar)
+
+When clicking a command, it intelligently handles output insertion:
+- Uses existing whitespace when available
+- Pushes text aside when necessary
+- Adds spacing to separate output from following text
+
+#### Links (start with #)
+Links provide navigation between pages:
+
+- **#1, #2, #3...**: Navigate to specific page numbers
+- **#last-page**: Jump to the last page in the document  
+- **#[page-name]**: Navigate to a page by its name (e.g., #my-notes)
+- **#back**: Return to the previous page (maintains navigation history)
+
+Navigation history is automatically tracked, allowing #back to retrace your steps through the pages you've visited.
 
 ## Memory Map
 
@@ -157,7 +184,7 @@ typedef struct {
 ### User Interface
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  NORMAL  [prev] Page 1 of 3 [next]    ← Mode indicator & nav bar│
+│ INSERT: my-page  [prev] Page 1 of 3 [next]   ← Mode, name & nav│
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  Your text appears here...                                      │
@@ -168,7 +195,10 @@ typedef struct {
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-The mode indicator shows the current editing mode (NORMAL, INSERT, or VISUAL) in the navigation bar.
+The navigation bar displays:
+- Current editing mode (NORMAL, INSERT, or VISUAL)
+- Page name (if set via $rename)
+- Page navigation controls and current page number
 
 ### Navigation Controls
 - **Mouse**: Click [prev] or [next] buttons in navigation bar
