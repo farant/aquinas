@@ -621,7 +621,8 @@ void draw_rectangle(int x, int y, int width, int height, unsigned char color) {
                 /* Last byte is full */
                 outb(0x3CE, 0x08);  /* Bit Mask Register */
                 outb(0x3CF, 0xFF);  /* All pixels */
-                vga[offset + end_byte] = 0x00;  /* Convention: write 0 for full bytes */
+                dummy = vga[offset + end_byte];  /* Latch first */
+                vga[offset + end_byte] = dummy;  /* Then write back latched value */
             }
         }
     }
