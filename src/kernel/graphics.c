@@ -405,66 +405,98 @@ void set_pixel(int x, int y, unsigned char color) {
 
 void draw_rectangle(int x, int y, int width, int height, unsigned char color) {
     unsigned char *vga = (unsigned char *)VGA_GRAPHICS_BUFFER;
-    int plane, row, col;
+    int row, col;
     int x1, x2, y1, y2;
+    int start_byte, end_byte;
     unsigned int offset;
-    unsigned char mask_left, mask_right, mask;
+    unsigned char mask;
+    volatile unsigned char dummy;  /* For latch operations */
     
     if (x >= VGA_WIDTH_12H || y >= VGA_HEIGHT_12H) return;
+    if (width <= 0 || height <= 0) return;
     
     x1 = x;
     y1 = y;
     x2 = x + width - 1;
     y2 = y + height - 1;
     
+    /* Clip to screen bounds */
+    if (x1 < 0) x1 = 0;
+    if (y1 < 0) y1 = 0;
     if (x2 >= VGA_WIDTH_12H) x2 = VGA_WIDTH_12H - 1;
     if (y2 >= VGA_HEIGHT_12H) y2 = VGA_HEIGHT_12H - 1;
     
-    for (plane = 0; plane < 4; plane++) {
-        outb(0x3C4, 0x02);
-        outb(0x3C5, 1 << plane);
+    /* Set up VGA for efficient filled rectangle drawing */
+    
+    /* Set Graphics Mode to Write Mode 0 */
+    outb(0x3CE, 0x05);  /* Graphics Mode Register */
+    outb(0x3CF, 0x00);  /* Write mode 0 */
+    
+    /* Enable all planes for writing */
+    outb(0x3C4, 0x02);  /* Map Mask Register */
+    outb(0x3C5, 0x0F);  /* Enable all 4 planes */
+    
+    /* Set the color in the Set/Reset register */
+    outb(0x3CE, 0x00);  /* Set/Reset Register */
+    outb(0x3CF, color); /* Color value to be used for all planes */
+    
+    /* Enable Set/Reset for all planes */
+    outb(0x3CE, 0x01);  /* Enable Set/Reset Register */
+    outb(0x3CF, 0x0F);  /* Enable Set/Reset for all 4 planes */
+    
+    /* Draw the rectangle row by row */
+    for (row = y1; row <= y2; row++) {
+        start_byte = x1 / 8;
+        end_byte = x2 / 8;
+        offset = row * (VGA_WIDTH_12H / 8);
         
-        for (row = y1; row <= y2; row++) {
-            int start_byte = x1 / 8;
-            int end_byte = x2 / 8;
+        if (start_byte == end_byte) {
+            /* Rectangle fits within a single byte */
+            mask = (0xFF >> (x1 & 7)) & (0xFF << (7 - (x2 & 7)));
+            outb(0x3CE, 0x08);  /* Bit Mask Register */
+            outb(0x3CF, mask);
+            /* Read to latch, then write (value doesn't matter with Set/Reset) */
+            dummy = vga[offset + start_byte];
+            vga[offset + start_byte] = 0xFF;
+        } else {
+            /* First byte (partial) */
+            if (x1 & 7) {  /* Only if not byte-aligned */
+                mask = 0xFF >> (x1 & 7);
+                outb(0x3CE, 0x08);  /* Bit Mask Register */
+                outb(0x3CF, mask);
+                dummy = vga[offset + start_byte];
+                vga[offset + start_byte] = 0xFF;
+                start_byte++;
+            }
             
-            offset = row * (VGA_WIDTH_12H / 8);
+            /* Middle bytes (full bytes) */
+            if (start_byte <= end_byte) {
+                outb(0x3CE, 0x08);  /* Bit Mask Register */
+                outb(0x3CF, 0xFF);  /* All pixels in byte */
+                for (col = start_byte; col < end_byte; col++) {
+                    vga[offset + col] = 0xFF;  /* Value doesn't matter with Set/Reset */
+                }
+            }
             
-            if (start_byte == end_byte) {
-                mask_left = 0xFF >> (x1 & 7);
-                mask_right = 0xFF << (7 - (x2 & 7));
-                mask = mask_left & mask_right;
-                
-                if (color & (1 << plane)) {
-                    vga[offset + start_byte] |= mask;
-                } else {
-                    vga[offset + start_byte] &= ~mask;
-                }
-            } else {
-                mask_left = 0xFF >> (x1 & 7);
-                if (color & (1 << plane)) {
-                    vga[offset + start_byte] |= mask_left;
-                } else {
-                    vga[offset + start_byte] &= ~mask_left;
-                }
-                
-                for (col = start_byte + 1; col < end_byte; col++) {
-                    if (color & (1 << plane)) {
-                        vga[offset + col] = 0xFF;
-                    } else {
-                        vga[offset + col] = 0x00;
-                    }
-                }
-                
-                mask_right = 0xFF << (7 - (x2 & 7));
-                if (color & (1 << plane)) {
-                    vga[offset + end_byte] |= mask_right;
-                } else {
-                    vga[offset + end_byte] &= ~mask_right;
-                }
+            /* Last byte (partial) */
+            if ((x2 & 7) != 7) {  /* Only if not byte-aligned */
+                mask = 0xFF << (7 - (x2 & 7));
+                outb(0x3CE, 0x08);  /* Bit Mask Register */
+                outb(0x3CF, mask);
+                dummy = vga[offset + end_byte];
+                vga[offset + end_byte] = 0xFF;
+            } else if (start_byte <= end_byte) {
+                /* Last byte is full */
+                vga[offset + end_byte] = 0xFF;
             }
         }
     }
+    
+    /* Restore default state */
+    outb(0x3CE, 0x01);  /* Enable Set/Reset Register */
+    outb(0x3CF, 0x00);  /* Disable Set/Reset */
+    outb(0x3CE, 0x08);  /* Bit Mask Register */
+    outb(0x3CF, 0xFF);  /* Enable all bits */
 }
 
 void clear_graphics_screen(unsigned char color) {
@@ -491,6 +523,8 @@ void graphics_demo(void) {
     unsigned int current_time;
     int x_pos = 0;
     int y_pos = 0;
+    int prev_x_pos = 0;  /* Track previous position for proper clearing */
+    int prev_y_pos = 0;
     int color = 1;
     int i;
     
@@ -557,8 +591,14 @@ void graphics_demo(void) {
         
         /* Update animation only if enough time has passed */
         if (current_time - last_frame_time >= FRAME_DELAY_MS) {
-            /* Clear previous animated rectangle (restore background) */
-            draw_rectangle(380 + x_pos, 240 + y_pos, 60, 40, COLOR_BACKGROUND);
+            /* Clear previous animated rectangle using PREVIOUS position */
+            if (animation_frame > 0) {  /* Don't clear on first frame */
+                draw_rectangle(380 + prev_x_pos, 240 + prev_y_pos, 60, 40, COLOR_BACKGROUND);
+            }
+            
+            /* Save current position as previous for next frame */
+            prev_x_pos = x_pos;
+            prev_y_pos = y_pos;
             
             /* Update position and color */
             animation_frame++;
