@@ -34,6 +34,7 @@
 #include "timer.h"
 #include "rtc.h"
 #include "memory.h"
+#include "graphics.h"
 
 /* Page size is one screen minus the navigation bar */
 #define PAGE_SIZE ((VGA_HEIGHT - 1) * VGA_WIDTH)
@@ -752,6 +753,22 @@ void execute_command(Page* page, int cmd_start, int cmd_end) {
         
         /* Refresh display to show new name in nav bar */
         refresh_screen();
+    }
+    else if (cmd_len == 9 && cmd_name[1] == 'g' && cmd_name[2] == 'r' &&
+             cmd_name[3] == 'a' && cmd_name[4] == 'p' && cmd_name[5] == 'h' &&
+             cmd_name[6] == 'i' && cmd_name[7] == 'c' && cmd_name[8] == 's') {
+        /* $graphics command - switch to graphics mode for demo */
+        serial_write_string("Entering graphics mode demo\n");
+        
+        /* Run the graphics demo (will return when ESC is pressed) */
+        graphics_demo();
+        
+        /* Screen needs to be redrawn after returning from graphics mode */
+        refresh_screen();
+        
+        /* Clear highlight after command execution */
+        page->highlight_start = 0;
+        page->highlight_end = 0;
     }
 }
 
