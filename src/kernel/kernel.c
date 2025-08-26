@@ -45,6 +45,7 @@ typedef struct {
     int cursor_pos;    /* Cursor position in this page */
     int highlight_start;  /* Start of highlighted text in this page */
     int highlight_end;    /* End of highlighted text in this page */
+    char name[64];     /* Optional page name (empty string if unnamed) */
 } Page;
 
 /* Page management */
@@ -80,6 +81,7 @@ void refresh_screen(void);
 void draw_nav_bar(void);
 void set_mode(EditorMode mode);
 const char* get_mode_string(void);
+void execute_command(Page* page, int cmd_start, int cmd_end);
 
 /* Allocate a new page */
 Page* allocate_page(void) {
@@ -102,6 +104,7 @@ Page* allocate_page(void) {
     page->cursor_pos = 0;
     page->highlight_start = 0;
     page->highlight_end = 0;
+    page->name[0] = '\0';  /* Empty name initially */
     
     return page;
 }
@@ -219,6 +222,32 @@ void draw_nav_bar(void) {
             color = VGA_COLOR_MOUSE;
         }
         vga_write_char(i + 1, mode_str[i], color);
+    }
+    
+    /* Display page name if it exists */
+    {
+        Page *page = pages[current_page];
+        int name_start = mode_len + 2;  /* Start after mode and a space */
+        int name_len = 0;
+        
+        if (page && page->name[0] != '\0') {
+            /* Count name length */
+            while (page->name[name_len] && name_len < 63) {
+                name_len++;
+            }
+            
+            /* Write separator */
+            vga_write_char(name_start - 1, ':', 0x7000);
+            
+            /* Write page name */
+            for (i = 0; i < name_len; i++) {
+                color = 0x7000;  /* Gray background */
+                if (mouse_visible && mouse_y == 0 && mouse_x == name_start + i) {
+                    color = VGA_COLOR_MOUSE;
+                }
+                vga_write_char(name_start + i, page->name[i], color);
+            }
+        }
     }
     
     /* Format page info string */
@@ -460,6 +489,237 @@ void refresh_screen(void) {
         }
     }
     update_cursor();
+}
+
+/* Execute a command that starts with $ */
+void execute_command(Page* page, int cmd_start, int cmd_end) {
+    char cmd_name[32];
+    int cmd_len;
+    int i;
+    int insert_pos;
+    char output[64];
+    int output_len;
+    rtc_time_t now;
+    int space_after;
+    int visual_space_count;
+    int scan_pos;
+    int col;
+    
+    /* Extract command name */
+    cmd_len = cmd_end - cmd_start;
+    if (cmd_len >= 32) cmd_len = 31;
+    
+    for (i = 0; i < cmd_len; i++) {
+        cmd_name[i] = page->buffer[cmd_start + i];
+    }
+    cmd_name[cmd_len] = '\0';
+    
+    /* Debug output */
+    serial_write_string("Executing command: ");
+    for (i = 0; i < cmd_len; i++) {
+        serial_write_char(cmd_name[i]);
+    }
+    serial_write_char('\n');
+    
+    /* Process commands */
+    if (cmd_len == 5 && cmd_name[1] == 'd' && cmd_name[2] == 'a' && 
+        cmd_name[3] == 't' && cmd_name[4] == 'e') {
+        /* $date command - insert current date/time */
+        get_current_time(&now);
+        
+        /* Format date as MM/DD/YYYY HH:MM */
+        output_len = 0;
+        
+        /* Month */
+        if (now.month >= 10) {
+            output[output_len++] = '0' + (now.month / 10);
+        } else {
+            output[output_len++] = '0';
+        }
+        output[output_len++] = '0' + (now.month % 10);
+        output[output_len++] = '/';
+        
+        /* Day */
+        if (now.day >= 10) {
+            output[output_len++] = '0' + (now.day / 10);
+        } else {
+            output[output_len++] = '0';
+        }
+        output[output_len++] = '0' + (now.day % 10);
+        output[output_len++] = '/';
+        
+        /* Year */
+        output[output_len++] = '0' + ((now.year / 1000) % 10);
+        output[output_len++] = '0' + ((now.year / 100) % 10);
+        output[output_len++] = '0' + ((now.year / 10) % 10);
+        output[output_len++] = '0' + (now.year % 10);
+        output[output_len++] = ' ';
+        
+        /* Hour */
+        if (now.hour >= 10) {
+            output[output_len++] = '0' + (now.hour / 10);
+        } else {
+            output[output_len++] = '0';
+        }
+        output[output_len++] = '0' + (now.hour % 10);
+        output[output_len++] = ':';
+        
+        /* Minute */
+        if (now.minute >= 10) {
+            output[output_len++] = '0' + (now.minute / 10);
+        } else {
+            output[output_len++] = '0';
+        }
+        output[output_len++] = '0' + (now.minute % 10);
+        
+        /* Determine insertion position */
+        insert_pos = cmd_end;
+        
+        /* Check if there's already a space after the command */
+        space_after = 0;
+        if (insert_pos < page->length && page->buffer[insert_pos] == ' ') {
+            space_after = 1;
+            insert_pos++;  /* Skip the existing space */
+        }
+        
+        /* Count visual whitespace after command position */
+        visual_space_count = 0;
+        scan_pos = insert_pos;
+        col = 0;
+        
+        /* Calculate column position of insert_pos */
+        for (i = 0; i < insert_pos && i < page->length; i++) {
+            if (page->buffer[i] == '\n') {
+                col = 0;
+            } else if (page->buffer[i] == '\t') {
+                col += 2;
+            } else {
+                col++;
+            }
+        }
+        
+        /* Count spaces until we hit non-whitespace or newline */
+        while (scan_pos < page->length && visual_space_count < output_len) {
+            if (page->buffer[scan_pos] == ' ') {
+                visual_space_count++;
+                scan_pos++;
+                col++;
+            } else if (page->buffer[scan_pos] == '\n') {
+                /* Count remaining columns in the line as available space */
+                while (col < VGA_WIDTH && visual_space_count < output_len) {
+                    visual_space_count++;
+                    col++;
+                }
+                break;
+            } else {
+                /* Hit non-whitespace character */
+                break;
+            }
+        }
+        
+        /* Check if we have enough room */
+        if (page->length + output_len + 1 - visual_space_count >= PAGE_SIZE) {
+            serial_write_string("Not enough space for command output\n");
+            return;
+        }
+        
+        /* Add space to output to separate from following text */
+        output[output_len++] = ' ';
+        
+        /* If we have enough visual space, overwrite it */
+        if (visual_space_count >= output_len) {
+            /* Just overwrite the spaces */
+            for (i = 0; i < output_len; i++) {
+                page->buffer[insert_pos + i] = output[i];
+            }
+        } else {
+            /* Need to make room - shift text right */
+            int shift_amount = output_len - visual_space_count;
+            
+            /* Add space before output if not already there */
+            if (!space_after) {
+                shift_amount++;  /* Need one more byte for the space */
+            }
+            
+            /* Shift existing text to make room */
+            for (i = page->length - 1; i >= insert_pos + visual_space_count; i--) {
+                page->buffer[i + shift_amount] = page->buffer[i];
+            }
+            
+            /* Insert space if needed */
+            if (!space_after) {
+                page->buffer[cmd_end] = ' ';
+                insert_pos = cmd_end + 1;
+            }
+            
+            /* Insert the output */
+            for (i = 0; i < output_len; i++) {
+                page->buffer[insert_pos + i] = output[i];
+            }
+            
+            /* Update page length */
+            page->length += shift_amount;
+        }
+        
+        /* Clear highlight after command execution */
+        page->highlight_start = 0;
+        page->highlight_end = 0;
+        
+        /* Refresh display */
+        refresh_screen();
+    } else if (cmd_len == 7 && cmd_name[1] == 'r' && cmd_name[2] == 'e' && 
+               cmd_name[3] == 'n' && cmd_name[4] == 'a' && cmd_name[5] == 'm' && 
+               cmd_name[6] == 'e') {
+        /* $rename command - look for name after the command */
+        int name_start = cmd_end;
+        int name_end = cmd_end;
+        int name_len = 0;
+        int j;
+        
+        /* Skip any spaces after $rename */
+        while (name_start < page->length && page->buffer[name_start] == ' ') {
+            name_start++;
+        }
+        
+        /* Find the end of the name (next space or newline) */
+        name_end = name_start;
+        while (name_end < page->length && 
+               page->buffer[name_end] != ' ' && 
+               page->buffer[name_end] != '\n' &&
+               page->buffer[name_end] != '\t') {
+            name_end++;
+        }
+        
+        /* Extract the new name */
+        if (name_start < name_end) {
+            /* We have a name argument */
+            name_len = name_end - name_start;
+            if (name_len > 63) name_len = 63;  /* Limit to 63 chars */
+            
+            /* Copy the name */
+            for (j = 0; j < name_len; j++) {
+                page->name[j] = page->buffer[name_start + j];
+            }
+            page->name[name_len] = '\0';
+            
+            serial_write_string("Page renamed to: ");
+            for (j = 0; j < name_len; j++) {
+                serial_write_char(page->name[j]);
+            }
+            serial_write_char('\n');
+        } else {
+            /* No name provided - clear the name */
+            page->name[0] = '\0';
+            serial_write_string("Page name cleared\n");
+        }
+        
+        /* Clear highlight after command execution */
+        page->highlight_start = 0;
+        page->highlight_end = 0;
+        
+        /* Refresh display to show new name in nav bar */
+        refresh_screen();
+    }
 }
 
 /* Insert a character at cursor position */
@@ -1256,6 +1516,12 @@ void poll_mouse(void) {
                                 page->highlight_end++;
                             }
                             
+                            /* Check if this is a command (starts with $) */
+                            if (page->buffer[page->highlight_start] == '$') {
+                                /* Execute the command */
+                                execute_command(page, page->highlight_start, page->highlight_end);
+                            }
+                            
                             /* Debug: Log the highlighted word (via COM2) */
                             serial_write_string("Highlighted word at position ");
                             serial_write_hex(buf_pos);
@@ -1759,6 +2025,10 @@ void kernel_main(void) {
                 move_cursor_left();
             } else if (key == -4) {  /* Right arrow */
                 move_cursor_right();
+            } else if (key == -5) {  /* Shift+Left = Previous page */
+                prev_page();
+            } else if (key == -6) {  /* Shift+Right = Next page */
+                next_page();
             } else if (key == '\b') {  /* Backspace */
                 delete_char();
             } else if (key == '\t') {  /* Tab - insert actual tab character */
