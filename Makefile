@@ -71,6 +71,10 @@ $(OS_IMG): $(BOOT_BIN) $(KERNEL_BIN)
 run: $(OS_IMG)
 	$(QEMU) -drive file=$(OS_IMG),format=raw -m 128M -display cocoa,zoom-to-fit=on -full-screen -serial msmouse -serial stdio
 
+# Run without zoom-to-fit (more stable for mode switches)
+run-stable: $(OS_IMG)
+	$(QEMU) -drive file=$(OS_IMG),format=raw -m 128M -display cocoa -serial msmouse -serial stdio
+
 # Run with only debug output (no mouse)
 run-debug: $(OS_IMG)
 	$(QEMU) -drive file=$(OS_IMG),format=raw -m 128M -serial stdio

@@ -2,6 +2,7 @@
 #include "io.h"
 #include "serial.h"
 #include "memory.h"
+#include "timer.h"
 
 /* VGA font is stored in plane 2 at 0xA0000
  * We need to save it before switching to graphics mode
@@ -400,7 +401,15 @@ void clear_graphics_screen(unsigned char color) {
 void graphics_demo(void) {
     int running = 1;
     int animation_frame = 0;
+    unsigned int last_frame_time;
+    unsigned int current_time;
+    int x_pos = 0;
+    int y_pos = 0;
+    int color = 1;
     int i;
+    
+    /* Frame timing constants */
+    #define FRAME_DELAY_MS 50  /* 50ms = 20 FPS */
     
     /* Save font before switching to graphics */
     save_vga_font();
@@ -409,6 +418,7 @@ void graphics_demo(void) {
     
     clear_graphics_screen(0);
     
+    /* Draw static rectangles */
     draw_rectangle(50, 50, 100, 100, 1);
     draw_rectangle(200, 50, 150, 100, 2);
     draw_rectangle(400, 50, 100, 150, 3);
@@ -423,17 +433,34 @@ void graphics_demo(void) {
     
     draw_rectangle(260, 10, 120, 20, 15);
     
+    /* Initialize timing */
+    last_frame_time = get_ticks();
+    
     while (running) {
+        /* Check for ESC key to exit */
         if (inb(0x60) == 0x01) {
             running = 0;
         }
         
-        animation_frame++;
-        if (animation_frame % 10000 == 0) {
-            int color = (animation_frame / 10000) % 16;
-            draw_rectangle(290 + (animation_frame/10000) % 40, 
-                          240 + (animation_frame/10000) % 30, 
-                          60, 40, color);
+        /* Get current time */
+        current_time = get_ticks();
+        
+        /* Update animation only if enough time has passed */
+        if (current_time - last_frame_time >= FRAME_DELAY_MS) {
+            /* Clear previous animated rectangle (draw black over it) */
+            draw_rectangle(290 + x_pos, 240 + y_pos, 60, 40, 0);
+            
+            /* Update position and color */
+            animation_frame++;
+            x_pos = (animation_frame * 2) % 40;  /* Move 2 pixels per frame */
+            y_pos = (animation_frame * 2) % 30;
+            color = (animation_frame / 5) % 16;  /* Change color every 5 frames */
+            
+            /* Draw new animated rectangle */
+            draw_rectangle(290 + x_pos, 240 + y_pos, 60, 40, color);
+            
+            /* Update last frame time */
+            last_frame_time = current_time;
         }
     }
     
