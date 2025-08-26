@@ -55,6 +55,12 @@ Page* pages[MAX_PAGES];  /* Array of pointers to pages */
 int current_page = 0;
 int total_pages = 1;
 
+/* Navigation history for #back functionality */
+#define HISTORY_SIZE 32
+int page_history[HISTORY_SIZE];
+int history_pos = 0;
+int history_count = 0;
+
 /* Editor modes */
 typedef enum {
     MODE_NORMAL,    /* Normal/command mode (vim-like) */
@@ -82,6 +88,8 @@ void draw_nav_bar(void);
 void set_mode(EditorMode mode);
 const char* get_mode_string(void);
 void execute_command(Page* page, int cmd_start, int cmd_end);
+void navigate_to_page(int new_page);
+void execute_link(Page* page, int link_start, int link_end);
 
 /* Allocate a new page */
 Page* allocate_page(void) {
@@ -153,35 +161,60 @@ const char* get_mode_string(void) {
     }
 }
 
+/* Navigate to a specific page with history tracking */
+void navigate_to_page(int new_page) {
+    if (new_page == current_page) return;  /* Already on this page */
+    
+    if (new_page < 0) new_page = 0;
+    if (new_page >= MAX_PAGES) new_page = MAX_PAGES - 1;
+    
+    /* Record current page in history before navigating away */
+    if (history_count < HISTORY_SIZE) {
+        page_history[history_count] = current_page;
+        history_count++;
+        history_pos = history_count;  /* Reset position to end */
+    } else {
+        /* History is full, shift everything left and add new entry */
+        int i;
+        for (i = 0; i < HISTORY_SIZE - 1; i++) {
+            page_history[i] = page_history[i + 1];
+        }
+        page_history[HISTORY_SIZE - 1] = current_page;
+        /* history_pos stays at HISTORY_SIZE */
+    }
+    
+    /* Navigate to the new page */
+    current_page = new_page;
+    
+    /* Create page if it doesn't exist yet */
+    if (current_page >= total_pages) {
+        total_pages = current_page + 1;
+        /* Allocate and initialize new page */
+        pages[current_page] = allocate_page();
+        if (pages[current_page] == NULL) {
+            serial_write_string("ERROR: Failed to allocate new page\n");
+            /* Go back to previous page */
+            if (history_count > 0) {
+                current_page = page_history[history_count - 1];
+                history_count--;  /* Remove the failed navigation from history */
+            }
+            return;
+        }
+    }
+    
+    refresh_screen();
+}
+
 /* Switch to previous page */
 void prev_page(void) {
     if (current_page > 0) {
-        current_page--;
-        /* Cursor position is already stored in the page structure */
-        refresh_screen();
+        navigate_to_page(current_page - 1);
     }
 }
 
 /* Switch to next page */
 void next_page(void) {
-    if (current_page < MAX_PAGES - 1) {
-        current_page++;
-        /* Update total pages if we're creating a new page */
-        if (current_page >= total_pages) {
-            total_pages = current_page + 1;
-            /* Allocate and initialize new page */
-            pages[current_page] = allocate_page();
-            if (pages[current_page] == NULL) {
-                serial_write_string("ERROR: Failed to allocate new page\n");
-                /* Revert to previous page */
-                current_page--;
-                total_pages--;
-                return;
-            }
-        }
-        /* Cursor position is already stored in the page structure */
-        refresh_screen();
-    }
+    navigate_to_page(current_page + 1);
 }
 
 /* Draw navigation bar at top of screen */
@@ -720,6 +753,103 @@ void execute_command(Page* page, int cmd_start, int cmd_end) {
         /* Refresh display to show new name in nav bar */
         refresh_screen();
     }
+}
+
+/* Execute a link that starts with # */
+void execute_link(Page* page, int link_start, int link_end) {
+    char link_text[64];
+    int link_len;
+    int i;
+    int target_page = -1;
+    
+    /* Extract link text (skip the #) */
+    link_len = link_end - link_start - 1;  /* -1 to skip # */
+    if (link_len >= 64) link_len = 63;
+    
+    for (i = 0; i < link_len; i++) {
+        link_text[i] = page->buffer[link_start + 1 + i];  /* +1 to skip # */
+    }
+    link_text[link_len] = '\0';
+    
+    /* Debug output */
+    serial_write_string("Clicking link: #");
+    for (i = 0; i < link_len; i++) {
+        serial_write_char(link_text[i]);
+    }
+    serial_write_char('\n');
+    
+    /* Check for #back */
+    if (link_len == 4 && link_text[0] == 'b' && link_text[1] == 'a' && 
+        link_text[2] == 'c' && link_text[3] == 'k') {
+        /* Go back in history */
+        if (history_count > 0) {
+            int prev_page = page_history[history_count - 1];
+            history_count--;  /* Remove from history */
+            current_page = prev_page;
+            refresh_screen();
+        }
+        /* Clear highlight */
+        page->highlight_start = 0;
+        page->highlight_end = 0;
+        return;
+    }
+    
+    /* Check for #last-page */
+    if (link_len == 9 && link_text[0] == 'l' && link_text[1] == 'a' && 
+        link_text[2] == 's' && link_text[3] == 't' && link_text[4] == '-' &&
+        link_text[5] == 'p' && link_text[6] == 'a' && link_text[7] == 'g' && 
+        link_text[8] == 'e') {
+        target_page = total_pages - 1;
+    }
+    /* Check if it's a page number */
+    else if (link_len > 0 && link_text[0] >= '0' && link_text[0] <= '9') {
+        /* Parse page number */
+        target_page = 0;
+        for (i = 0; i < link_len; i++) {
+            if (link_text[i] >= '0' && link_text[i] <= '9') {
+                target_page = target_page * 10 + (link_text[i] - '0');
+            } else {
+                /* Invalid number */
+                target_page = -1;
+                break;
+            }
+        }
+        if (target_page > 0) {
+            target_page--;  /* Convert to 0-based index */
+        }
+    }
+    /* Otherwise, it's a page name - search for it */
+    else if (link_len > 0) {
+        int p;
+        for (p = 0; p < total_pages; p++) {
+            if (pages[p] && pages[p]->name[0] != '\0') {
+                /* Compare page name with link text */
+                int matches = 1;
+                for (i = 0; i < link_len; i++) {
+                    if (pages[p]->name[i] != link_text[i]) {
+                        matches = 0;
+                        break;
+                    }
+                }
+                /* Check that name ends here too */
+                if (matches && pages[p]->name[link_len] == '\0') {
+                    target_page = p;
+                    break;
+                }
+            }
+        }
+    }
+    
+    /* Navigate if we found a valid target */
+    if (target_page >= 0) {
+        navigate_to_page(target_page);
+    } else {
+        serial_write_string("Link target not found\n");
+    }
+    
+    /* Clear highlight */
+    page->highlight_start = 0;
+    page->highlight_end = 0;
 }
 
 /* Insert a character at cursor position */
@@ -1520,6 +1650,11 @@ void poll_mouse(void) {
                             if (page->buffer[page->highlight_start] == '$') {
                                 /* Execute the command */
                                 execute_command(page, page->highlight_start, page->highlight_end);
+                            }
+                            /* Check if this is a link (starts with #) */
+                            else if (page->buffer[page->highlight_start] == '#') {
+                                /* Execute the link */
+                                execute_link(page, page->highlight_start, page->highlight_end);
                             }
                             
                             /* Debug: Log the highlighted word (via COM2) */
