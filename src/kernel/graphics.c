@@ -587,6 +587,50 @@ void draw_circle(int cx, int cy, int radius, unsigned char color) {
     }
 }
 
+void draw_char_from_bios_font(int x, int y, unsigned char c, unsigned char color) {
+    unsigned char *char_data;
+    int row, col;
+    unsigned char byte;
+    
+    if (saved_font == NULL) {
+        return;  /* No font available */
+    }
+    
+    /* In VGA, each character is 32 bytes (16 rows, with padding) */
+    char_data = saved_font + (c * 32);
+    
+    for (row = 0; row < 16; row++) {
+        byte = char_data[row];
+        for (col = 0; col < 8; col++) {
+            if (byte & (0x80 >> col)) {
+                set_pixel(x + col, y + row, color);
+            }
+        }
+    }
+}
+
+void draw_string(int x, int y, const char *str, unsigned char color) {
+    int char_x = x;
+    const char *p = str;
+    
+    if (saved_font == NULL) {
+        return;  /* No font available */
+    }
+    
+    while (*p) {
+        if (*p == '\n') {
+            /* Handle newline */
+            char_x = x;
+            y += 16;  /* Move down one line (16 pixels for VGA font height) */
+        } else {
+            /* Draw the character */
+            draw_char_from_bios_font(char_x, y, (unsigned char)*p, color);
+            char_x += 8;  /* Move to next character position (8 pixels wide) */
+        }
+        p++;
+    }
+}
+
 void clear_graphics_screen(unsigned char color) {
     unsigned char *vga = (unsigned char *)VGA_GRAPHICS_BUFFER;
     int plane, i;
@@ -630,6 +674,9 @@ void graphics_demo(void) {
     /* Clear screen with medium gray background */
     clear_graphics_screen(COLOR_BACKGROUND);
     
+    /* Draw title text */
+    draw_string(20, 5, "Aquinas Graphics Mode Demo", COLOR_TEXT);
+    
     /* Draw UI demo with the new palette */
     /* Grayscale showcase */
     draw_rectangle(20, 20, 60, 60, 0);   /* Black */
@@ -640,16 +687,19 @@ void graphics_demo(void) {
     draw_rectangle(370, 20, 60, 60, 5);  /* White */
     
     /* Red showcase */
+    draw_string(20, 85, "Reds:", COLOR_TEXT);
     draw_rectangle(20, 100, 100, 50, 6);   /* Dark red */
     draw_rectangle(130, 100, 100, 50, 7);  /* Medium red */
     draw_rectangle(240, 100, 100, 50, 8);  /* Bright red */
     
     /* Gold showcase */
+    draw_string(20, 155, "Golds:", COLOR_TEXT);
     draw_rectangle(20, 170, 100, 50, 9);   /* Dark gold */
     draw_rectangle(130, 170, 100, 50, 10); /* Medium gold */
     draw_rectangle(240, 170, 100, 50, 11); /* Bright yellow-gold */
     
     /* Cyan showcase */
+    draw_string(20, 225, "Cyans:", COLOR_TEXT);
     draw_rectangle(20, 240, 100, 50, 12);  /* Dark cyan */
     draw_rectangle(130, 240, 100, 50, 13); /* Medium cyan */
     draw_rectangle(240, 240, 100, 50, 14); /* Bright cyan */
@@ -666,6 +716,7 @@ void graphics_demo(void) {
     draw_rectangle(455, 105, 140, 90, COLOR_BACKGROUND);
     
     /* New drawing primitives demo */
+    draw_string(360, 320, "Drawing Primitives:", COLOR_TEXT);
     /* Lines in various directions */
     draw_line(360, 380, 440, 380, COLOR_TEXT);        /* Horizontal */
     draw_line(400, 340, 400, 420, COLOR_TEXT);        /* Vertical */
@@ -680,6 +731,9 @@ void graphics_demo(void) {
     draw_circle(560, 380, 30, COLOR_LINK);
     draw_circle(560, 380, 20, COLOR_COMMAND);
     draw_circle(560, 380, 10, COLOR_SELECTION);
+    
+    /* Instructions */
+    draw_string(20, 460, "Press ESC to exit graphics mode", COLOR_TEXT_DIM);
     
     /* Initialize timing */
     last_frame_time = get_ticks();
