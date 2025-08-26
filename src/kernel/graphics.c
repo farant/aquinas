@@ -524,6 +524,69 @@ void draw_rectangle(int x, int y, int width, int height, unsigned char color) {
     outb(0x3CF, 0xFF);  /* Enable all bits */
 }
 
+/* Simple abs implementation for freestanding environment */
+static int abs(int x) {
+    return x < 0 ? -x : x;
+}
+
+void draw_line(int x0, int y0, int x1, int y1, unsigned char color) {
+    int dx = abs(x1 - x0);
+    int dy = abs(y1 - y0);
+    int sx = (x0 < x1) ? 1 : -1;
+    int sy = (y0 < y1) ? 1 : -1;
+    int err = dx - dy;
+    int e2;
+    
+    while (1) {
+        set_pixel(x0, y0, color);
+        
+        if (x0 == x1 && y0 == y1) break;
+        
+        e2 = 2 * err;
+        if (e2 > -dy) {
+            err -= dy;
+            x0 += sx;
+        }
+        if (e2 < dx) {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
+void draw_rectangle_outline(int x, int y, int width, int height, unsigned char color) {
+    draw_line(x, y, x + width - 1, y, color);                    /* Top */
+    draw_line(x, y + height - 1, x + width - 1, y + height - 1, color); /* Bottom */
+    draw_line(x, y, x, y + height - 1, color);                   /* Left */
+    draw_line(x + width - 1, y, x + width - 1, y + height - 1, color);  /* Right */
+}
+
+void draw_circle(int cx, int cy, int radius, unsigned char color) {
+    int x = 0;
+    int y = radius;
+    int d = 3 - 2 * radius;
+    
+    while (x <= y) {
+        /* Draw 8 octants */
+        set_pixel(cx + x, cy + y, color);
+        set_pixel(cx - x, cy + y, color);
+        set_pixel(cx + x, cy - y, color);
+        set_pixel(cx - x, cy - y, color);
+        set_pixel(cx + y, cy + x, color);
+        set_pixel(cx - y, cy + x, color);
+        set_pixel(cx + y, cy - x, color);
+        set_pixel(cx - y, cy - x, color);
+        
+        if (d < 0) {
+            d = d + 4 * x + 6;
+        } else {
+            d = d + 4 * (x - y) + 10;
+            y--;
+        }
+        x++;
+    }
+}
+
 void clear_graphics_screen(unsigned char color) {
     unsigned char *vga = (unsigned char *)VGA_GRAPHICS_BUFFER;
     int plane, i;
@@ -601,6 +664,22 @@ void graphics_demo(void) {
     /* Border demo */
     draw_rectangle(450, 100, 150, 100, COLOR_BORDER);
     draw_rectangle(455, 105, 140, 90, COLOR_BACKGROUND);
+    
+    /* New drawing primitives demo */
+    /* Lines in various directions */
+    draw_line(360, 380, 440, 380, COLOR_TEXT);        /* Horizontal */
+    draw_line(400, 340, 400, 420, COLOR_TEXT);        /* Vertical */
+    draw_line(360, 340, 440, 420, COLOR_LINK);        /* Diagonal \ */
+    draw_line(360, 420, 440, 340, COLOR_COMMAND);     /* Diagonal / */
+    
+    /* Rectangle outlines */
+    draw_rectangle_outline(460, 360, 80, 60, COLOR_HIGHLIGHT);
+    draw_rectangle_outline(470, 370, 60, 40, COLOR_CURSOR);
+    
+    /* Circles of different sizes */
+    draw_circle(560, 380, 30, COLOR_LINK);
+    draw_circle(560, 380, 20, COLOR_COMMAND);
+    draw_circle(560, 380, 10, COLOR_SELECTION);
     
     /* Initialize timing */
     last_frame_time = get_ticks();
