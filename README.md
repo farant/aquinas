@@ -19,6 +19,7 @@ aquinas/
 │   │   ├── display.c/h          # Screen rendering and UI
 │   │   ├── commands.c/h         # Command and link execution
 │   │   ├── modes.c/h            # Editor mode management (Normal/Insert/Visual)
+│   │   ├── input.c/h            # Keyboard and mouse input handling
 │   │   ├── serial.c/h           # Serial port communication (mouse & debug)
 │   │   ├── io.h                 # Port I/O functions
 │   │   ├── vga.c/h              # VGA text mode implementation
@@ -26,6 +27,7 @@ aquinas/
 │   │   ├── graphics_context.c/h # Graphics context system (clipping, patterns)
 │   │   ├── grid.c/h             # Grid system for UI layout
 │   │   ├── dispi.c/h            # DISPI/VBE graphics driver (640x480)
+│   │   ├── dispi_demo.c/h       # DISPI graphics demonstration
 │   │   ├── display_driver.c/h   # Display driver abstraction layer
 │   │   ├── dispi_cursor.c/h     # Mouse cursor for DISPI mode
 │   │   ├── pci.c/h              # PCI bus scanning for graphics devices
