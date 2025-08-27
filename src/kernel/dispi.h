@@ -57,6 +57,13 @@ void dispi_disable(void);
 unsigned char* dispi_get_framebuffer(void);
 unsigned int dispi_get_framebuffer_size(void);
 
+/* Double buffering support */
+int dispi_init_double_buffer(void);
+void dispi_flip_buffers(void);
+unsigned char* dispi_get_backbuffer(void);
+void dispi_cleanup_double_buffer(void);
+int dispi_is_double_buffered(void);
+
 /* Get the display driver for DISPI */
 struct DisplayDriver* dispi_get_driver(void);
 

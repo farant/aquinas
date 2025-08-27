@@ -13,11 +13,16 @@
 #include "io.h"
 #include "serial.h"
 #include "pci.h"
+#include "memory.h"
 
 /* Framebuffer information */
 static unsigned char* framebuffer = (unsigned char*)DISPI_LFB_PHYSICAL_ADDRESS;
 static unsigned int framebuffer_size = 0;
 static int dispi_available = 0;
+
+/* Double buffering support */
+static unsigned char* backbuffer = NULL;
+static int double_buffered = 0;
 
 /* Write to DISPI register */
 void dispi_write(unsigned short index, unsigned short value) {
@@ -220,21 +225,24 @@ static void dispi_driver_shutdown(void) {
 
 /* Set a pixel */
 static void dispi_driver_set_pixel(int x, int y, unsigned char color) {
+    unsigned char* target = double_buffered ? backbuffer : framebuffer;
     if (x >= 0 && x < DISPI_WIDTH && y >= 0 && y < DISPI_HEIGHT) {
-        framebuffer[y * DISPI_WIDTH + x] = color;
+        target[y * DISPI_WIDTH + x] = color;
     }
 }
 
 /* Get a pixel */
 static unsigned char dispi_driver_get_pixel(int x, int y) {
+    unsigned char* source = double_buffered ? backbuffer : framebuffer;
     if (x >= 0 && x < DISPI_WIDTH && y >= 0 && y < DISPI_HEIGHT) {
-        return framebuffer[y * DISPI_WIDTH + x];
+        return source[y * DISPI_WIDTH + x];
     }
     return 0;
 }
 
 /* Fill a rectangle */
 static void dispi_driver_fill_rect(int x, int y, int w, int h, unsigned char color) {
+    unsigned char* target;
     unsigned char* fb;
     int row, col;
     
@@ -247,7 +255,8 @@ static void dispi_driver_fill_rect(int x, int y, int w, int h, unsigned char col
     if (w <= 0 || h <= 0) return;
     
     /* Fill the rectangle */
-    fb = framebuffer + y * DISPI_WIDTH + x;
+    target = double_buffered ? backbuffer : framebuffer;
+    fb = target + y * DISPI_WIDTH + x;
     for (row = 0; row < h; row++) {
         for (col = 0; col < w; col++) {
             fb[col] = color;
@@ -258,6 +267,7 @@ static void dispi_driver_fill_rect(int x, int y, int w, int h, unsigned char col
 
 /* Blit a buffer to screen */
 static void dispi_driver_blit(int x, int y, int w, int h, unsigned char *src, int src_stride) {
+    unsigned char* target;
     unsigned char* fb;
     int row, col;
     
@@ -270,7 +280,8 @@ static void dispi_driver_blit(int x, int y, int w, int h, unsigned char *src, in
     if (w <= 0 || h <= 0) return;
     
     /* Copy the buffer */
-    fb = framebuffer + y * DISPI_WIDTH + x;
+    target = double_buffered ? backbuffer : framebuffer;
+    fb = target + y * DISPI_WIDTH + x;
     for (row = 0; row < h; row++) {
         for (col = 0; col < w; col++) {
             fb[col] = src[col];
@@ -306,13 +317,13 @@ static void dispi_driver_get_palette(unsigned char palette[16][3]) {
 /* Clear the entire screen */
 static void dispi_driver_clear_screen(unsigned char color) {
     /* Fast clear using memset-like operation */
-    unsigned char* fb = framebuffer;
+    unsigned char* target = double_buffered ? backbuffer : framebuffer;
     unsigned int size = DISPI_WIDTH * DISPI_HEIGHT;
     unsigned int i;
     
     /* Fill screen with color */
     for (i = 0; i < size; i++) {
-        fb[i] = color;
+        target[i] = color;
     }
 }
 
@@ -326,4 +337,71 @@ static void dispi_driver_vsync(void) {
 /* Get the DISPI driver */
 DisplayDriver* dispi_get_driver(void) {
     return &dispi_driver;
+}
+
+/* Initialize double buffering */
+int dispi_init_double_buffer(void) {
+    if (!dispi_available) {
+        serial_write_string("ERROR: Cannot init double buffer - DISPI not available\n");
+        return 0;
+    }
+    
+    if (double_buffered) {
+        serial_write_string("Double buffering already initialized\n");
+        return 1;
+    }
+    
+    /* Allocate backbuffer */
+    backbuffer = (unsigned char*)malloc(framebuffer_size);
+    if (!backbuffer) {
+        serial_write_string("ERROR: Failed to allocate backbuffer\n");
+        return 0;
+    }
+    
+    /* Clear the backbuffer */
+    memset(backbuffer, 0, framebuffer_size);
+    
+    double_buffered = 1;
+    serial_write_string("Double buffering initialized with ");
+    serial_write_hex(framebuffer_size);
+    serial_write_string(" byte backbuffer\n");
+    
+    return 1;
+}
+
+/* Flip buffers - copy backbuffer to framebuffer */
+void dispi_flip_buffers(void) {
+    if (!double_buffered || !backbuffer) {
+        return;
+    }
+    
+    /* Copy backbuffer to framebuffer
+     * This is where we'd ideally use hardware page flipping,
+     * but DISPI doesn't support multiple framebuffers */
+    memcpy(framebuffer, backbuffer, framebuffer_size);
+}
+
+/* Get backbuffer for drawing */
+unsigned char* dispi_get_backbuffer(void) {
+    if (!double_buffered) {
+        /* If not double buffered, return framebuffer directly */
+        return framebuffer;
+    }
+    return backbuffer;
+}
+
+/* Cleanup double buffering */
+void dispi_cleanup_double_buffer(void) {
+    if (backbuffer) {
+        /* Note: free() is a no-op in our bump allocator,
+         * but we clear the pointer for safety */
+        free(backbuffer);
+        backbuffer = NULL;
+    }
+    double_buffered = 0;
+}
+
+/* Check if double buffering is active */
+int dispi_is_double_buffered(void) {
+    return double_buffered;
 }

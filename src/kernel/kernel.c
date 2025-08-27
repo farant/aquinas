@@ -2023,9 +2023,19 @@ void test_dispi_driver(void) {
     driver = dispi_get_driver();
     display_set_driver(driver);
     
+    /* Enable double buffering for smooth rendering */
+    if (!dispi_init_double_buffer()) {
+        serial_write_string("WARNING: Double buffering failed, using single buffer\n");
+    }
+    
     /* Simple test: fill screen with red first */
     serial_write_string("Testing basic framebuffer fill...\n");
     display_clear(4);  /* Fill with light gray to test basic framebuffer access */
+    
+    /* Flip buffers to show initial clear */
+    if (dispi_is_double_buffered()) {
+        dispi_flip_buffers();
+    }
     
     /* Wait a moment to see if basic fill works */
     for (i = 0; i < 10000000; i++) {
@@ -2120,6 +2130,11 @@ void test_dispi_driver(void) {
     dispi_cursor_init();
     dispi_cursor_show();
     
+    /* Flip buffers to show initial screen */
+    if (dispi_is_double_buffered()) {
+        dispi_flip_buffers();
+    }
+    
     serial_write_string("DISPI demo displayed. Mouse cursor active. Press ESC to exit.\n");
     
     /* Main loop */
@@ -2209,6 +2224,11 @@ void test_dispi_driver(void) {
             }
         }
         
+        /* Flip buffers at end of frame if double buffering is enabled */
+        if (dispi_is_double_buffered()) {
+            dispi_flip_buffers();
+        }
+        
     }
     
     /* Return to text mode - save font, disable DISPI, restore VGA state */
@@ -2216,6 +2236,11 @@ void test_dispi_driver(void) {
     
     /* Hide mouse cursor before switching modes */
     dispi_cursor_hide();
+    
+    /* Cleanup double buffering if enabled */
+    if (dispi_is_double_buffered()) {
+        dispi_cleanup_double_buffer();
+    }
     
     /* Disable DISPI first */
     dispi_disable();
