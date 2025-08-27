@@ -41,53 +41,15 @@
 #include "dispi_cursor.h"
 #include "grid.h"
 #include "graphics_context.h"
+#include "page.h"
+#include "modes.h"
 
 /* From graphics.c - VGA state functions */
 void save_vga_font(void);
 void restore_vga_font(void);
 void restore_dac_palette(void);
 
-/* Page size is one screen minus the navigation bar */
-#define PAGE_SIZE ((VGA_HEIGHT - 1) * VGA_WIDTH)
-
-/* Page structure - each page has its own buffer and cursor */
-typedef struct {
-    char* buffer;      /* Dynamically allocated buffer */
-    int length;        /* Current length of text in this page */
-    int cursor_pos;    /* Cursor position in this page */
-    int highlight_start;  /* Start of highlighted text in this page */
-    int highlight_end;    /* End of highlighted text in this page */
-    char name[64];     /* Optional page name (empty string if unnamed) */
-} Page;
-
-/* Page management */
-#define PAGE_SIZE ((VGA_HEIGHT - 1) * VGA_WIDTH)  /* Characters per page */
-#define MAX_PAGES 100
-Page* pages[MAX_PAGES];  /* Array of pointers to pages */
-int current_page = 0;
-int total_pages = 1;
-
-/* Navigation history for #back functionality */
-#define HISTORY_SIZE 32
-int page_history[HISTORY_SIZE];
-int history_pos = 0;
-int history_count = 0;
-
-/* Editor modes */
-typedef enum {
-    MODE_NORMAL,    /* Normal/command mode (vim-like) */
-    MODE_INSERT,    /* Insert mode for typing */
-    MODE_VISUAL     /* Visual mode for selection */
-} EditorMode;
-
-EditorMode editor_mode = MODE_INSERT;  /* Start in insert mode for now */
-
-/* 'fd' escape sequence timeout in milliseconds 
- * When 'f' is typed, it's inserted immediately. If 'd' follows within
- * this timeout window, the 'f' is deleted and editor exits to normal mode.
- * This avoids delays when typing multiple 'f's in succession.
- */
-#define FD_ESCAPE_TIMEOUT_MS 300
+/* Editor modes moved to modes.c */
 
 /* Mouse state */
 int mouse_x = 40;          /* Mouse X position (0-79) */
@@ -97,139 +59,19 @@ int mouse_visible = 0;     /* Is mouse cursor visible */
 /* Forward declarations */
 void refresh_screen(void);
 void draw_nav_bar(void);
-void set_mode(EditorMode mode);
-const char* get_mode_string(void);
 void execute_command(Page* page, int cmd_start, int cmd_end);
-void navigate_to_page(int new_page);
 void execute_link(Page* page, int link_start, int link_end);
 void test_dispi_driver(void);
 static void draw_dispi_circle(int cx, int cy, int r, unsigned char color);
 
-/* Allocate a new page */
-Page* allocate_page(void) {
-    Page* page = (Page*)malloc(sizeof(Page));
-    if (page == NULL) {
-        serial_write_string("ERROR: Failed to allocate page structure\n");
-        return NULL;
-    }
-    
-    /* Allocate buffer for the page */
-    page->buffer = (char*)calloc(PAGE_SIZE, sizeof(char));
-    if (page->buffer == NULL) {
-        serial_write_string("ERROR: Failed to allocate page buffer\n");
-        /* Note: We can't free the page in bump allocator, but that's ok */
-        return NULL;
-    }
-    
-    /* Initialize page fields */
-    page->length = 0;
-    page->cursor_pos = 0;
-    page->highlight_start = 0;
-    page->highlight_end = 0;
-    page->name[0] = '\0';  /* Empty name initially */
-    
-    return page;
-}
-
-/* Initialize page array */
-void init_pages(void) {
-    int i;
-    
-    /* Clear all page pointers */
-    for (i = 0; i < MAX_PAGES; i++) {
-        pages[i] = NULL;
-    }
-    
-    /* Allocate the first page */
-    pages[0] = allocate_page();
-    if (pages[0] == NULL) {
-        /* Critical error - can't continue without at least one page */
-        serial_write_string("FATAL: Could not allocate initial page\n");
-        /* In a real OS, we'd panic here */
-    }
-    
-    current_page = 0;
-    total_pages = 1;
-}
+/* Page management functions moved to page.c */
 unsigned int get_stack_usage(void);
 
 /* Port I/O functions now in io.h */
 
-/* Mode management functions */
-void set_mode(EditorMode mode) {
-    editor_mode = mode;
-    /* Refresh to show new mode in status */
-    draw_nav_bar();
-}
+/* Mode management functions moved to modes.c */
 
-const char* get_mode_string(void) {
-    switch (editor_mode) {
-        case MODE_NORMAL:
-            return "NORMAL";
-        case MODE_INSERT:
-            return "INSERT";
-        case MODE_VISUAL:
-            return "VISUAL";
-        default:
-            return "UNKNOWN";
-    }
-}
-
-/* Navigate to a specific page with history tracking */
-void navigate_to_page(int new_page) {
-    if (new_page == current_page) return;  /* Already on this page */
-    
-    if (new_page < 0) new_page = 0;
-    if (new_page >= MAX_PAGES) new_page = MAX_PAGES - 1;
-    
-    /* Record current page in history before navigating away */
-    if (history_count < HISTORY_SIZE) {
-        page_history[history_count] = current_page;
-        history_count++;
-        history_pos = history_count;  /* Reset position to end */
-    } else {
-        /* History is full, shift everything left and add new entry */
-        int i;
-        for (i = 0; i < HISTORY_SIZE - 1; i++) {
-            page_history[i] = page_history[i + 1];
-        }
-        page_history[HISTORY_SIZE - 1] = current_page;
-        /* history_pos stays at HISTORY_SIZE */
-    }
-    
-    /* Navigate to the new page */
-    current_page = new_page;
-    
-    /* Create page if it doesn't exist yet */
-    if (current_page >= total_pages) {
-        total_pages = current_page + 1;
-        /* Allocate and initialize new page */
-        pages[current_page] = allocate_page();
-        if (pages[current_page] == NULL) {
-            serial_write_string("ERROR: Failed to allocate new page\n");
-            /* Go back to previous page */
-            if (history_count > 0) {
-                current_page = page_history[history_count - 1];
-                history_count--;  /* Remove the failed navigation from history */
-            }
-            return;
-        }
-    }
-    
-    refresh_screen();
-}
-
-/* Switch to previous page */
-void prev_page(void) {
-    if (current_page > 0) {
-        navigate_to_page(current_page - 1);
-    }
-}
-
-/* Switch to next page */
-void next_page(void) {
-    navigate_to_page(current_page + 1);
-}
+/* Page navigation functions moved to page.c */
 
 /* Draw navigation bar at top of screen */
 void draw_nav_bar(void) {
