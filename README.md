@@ -8,34 +8,60 @@ Inspired by Acme, event sourcing, XML, object database filesystems, and graph da
 
 ```
 aquinas/
-├── src/                      # Source code
-│   ├── boot/                # Bootloader
-│   │   └── boot.asm         # Boot sector (loads kernel, switches to protected mode)
-│   ├── kernel/              # Kernel code  
-│   │   ├── kernel_entry.asm # Assembly entry point
-│   │   ├── kernel.c         # Main kernel code
-│   │   ├── serial.c         # Serial port communication (mouse & debug)
-│   │   ├── serial.h         # Serial port definitions
-│   │   ├── io.h             # Port I/O functions
-│   │   ├── vga.c/h          # VGA text mode implementation
-│   │   ├── graphics.c/h     # VGA graphics mode (320x200 mode 12h)
-│   │   ├── dispi.c/h        # DISPI/VBE graphics driver (640x480)
-│   │   ├── display_driver.h # Display driver abstraction layer
-│   │   ├── dispi_cursor.c/h # Mouse cursor for DISPI mode
-│   │   ├── pci.c/h          # PCI bus scanning for graphics devices
-│   │   ├── font_6x8.h       # HP 100LX bitmap font
-│   │   ├── memory.c/h       # Memory management
-│   │   ├── timer.c/h        # Timer and timing functions
-│   │   └── rtc.c/h          # Real-time clock
-│   └── linker.ld            # Linker script
-├── build/                   # Build outputs (gitignored)
-│   ├── *.o                  # Object files
-│   ├── *.bin                # Binary files
-│   └── aquinas.img          # Final bootable image
-├── Makefile                 # Build system
-├── README.md                # This file
-├── CLAUDE.md                # Development guidelines & instructions
-└── notes.stml               # Development notes
+├── src/                          # Source code
+│   ├── boot/                    # Bootloader
+│   │   └── boot.asm             # Boot sector (loads kernel, switches to protected mode)
+│   ├── kernel/                  # Kernel code  
+│   │   ├── kernel_entry.asm     # Assembly entry point
+│   │   ├── kernel.c             # Main kernel and event loop
+│   │   ├── page.c/h             # Page management and navigation
+│   │   ├── editor.c/h           # Text editing operations
+│   │   ├── display.c/h          # Screen rendering and UI
+│   │   ├── commands.c/h         # Command and link execution
+│   │   ├── modes.c/h            # Editor mode management (Normal/Insert/Visual)
+│   │   ├── serial.c/h           # Serial port communication (mouse & debug)
+│   │   ├── io.h                 # Port I/O functions
+│   │   ├── vga.c/h              # VGA text mode implementation
+│   │   ├── graphics.c/h         # VGA graphics mode (320x200 mode 12h)
+│   │   ├── graphics_context.c/h # Graphics context system (clipping, patterns)
+│   │   ├── grid.c/h             # Grid system for UI layout
+│   │   ├── dispi.c/h            # DISPI/VBE graphics driver (640x480)
+│   │   ├── display_driver.c/h   # Display driver abstraction layer
+│   │   ├── dispi_cursor.c/h     # Mouse cursor for DISPI mode
+│   │   ├── pci.c/h              # PCI bus scanning for graphics devices
+│   │   ├── font_6x8.h           # HP 100LX bitmap font
+│   │   ├── text_renderer.c/h    # Text rendering for graphics modes
+│   │   ├── mouse.h              # Mouse definitions
+│   │   ├── memory.c/h           # Memory management
+│   │   ├── timer.c/h            # Timer and timing functions
+│   │   ├── timer_asm.asm        # Timer assembly helpers
+│   │   └── rtc.c/h              # Real-time clock
+│   └── linker.ld                # Linker script
+├── build/                       # Build outputs (gitignored)
+│   ├── *.o                      # Object files
+│   ├── *.bin                    # Binary files
+│   └── aquinas.img              # Final bootable image
+├── literature/                  # Programming philosophy references
+│   ├── antirez-comment-philosophy.md
+│   ├── casey-muratori-big-oops.md
+│   ├── charles-simonyi-intentional-programming.md
+│   ├── eskil-steenberg-programming-c.md
+│   ├── john-carmack-functional-programming.md
+│   └── sean-barrett-writing-small-programs-in-c.md
+├── tools/                       # Build tools
+│   ├── stb_truetype.h          # TrueType font library
+│   ├── ttf_to_c                # Font converter executable
+│   └── ttf_to_c_stb.c          # Font converter source
+├── Makefile                     # Build system
+├── README.md                    # This file
+├── CLAUDE.md                    # Development guidelines & instructions
+├── AI_SUGGESTIONS.md            # AI-generated improvement ideas
+├── AI_SUGGESTIONS_ACCEPTED.md   # Accepted AI suggestions
+├── BUGS.md                      # Known bugs tracking
+├── GOALS.md                     # Project goals and vision
+├── UI-IDEAS.md                  # UI design ideas and concepts
+├── notes.stml                   # Development notes
+└── Px437_HP_100LX_6x8.ttf      # HP 100LX font file
 ```
 
 ## Building
