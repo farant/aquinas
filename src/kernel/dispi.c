@@ -14,6 +14,7 @@
 #include "serial.h"
 #include "pci.h"
 #include "memory.h"
+#include "font_6x8.h"
 #include "graphics.h"
 
 /* Framebuffer information */
@@ -846,6 +847,37 @@ void dispi_draw_string_bios(int x, int y, const char *str, unsigned char fg_colo
             dispi_draw_char_bios(x, y, (unsigned char)*str, fg_color, bg_color);
             x += 9;  /* Character width including spacing */
         }
+        str++;
+    }
+}
+
+/* Text rendering functions for DISPI using 6x8 font */
+void dispi_draw_char(int x, int y, unsigned char c, unsigned char fg, unsigned char bg) {
+    const unsigned char *char_data;
+    int row, col;
+    unsigned char byte;
+    
+    /* Get character bitmap from 6x8 font */
+    char_data = font_hp100lx_6x8[c];
+    
+    for (row = 0; row < FONT_hp100lx_HEIGHT; row++) {
+        byte = char_data[row];
+        
+        /* Draw 6 columns */
+        for (col = 0; col < FONT_hp100lx_WIDTH; col++) {
+            if (byte & (0x80 >> col)) {
+                display_set_pixel(x + col, y + row, fg);
+            } else if (bg != 255) {  /* 255 = transparent */
+                display_set_pixel(x + col, y + row, bg);
+            }
+        }
+    }
+}
+
+void dispi_draw_string(int x, int y, const char *str, unsigned char fg, unsigned char bg) {
+    while (*str) {
+        dispi_draw_char(x, y, (unsigned char)*str, fg, bg);
+        x += FONT_hp100lx_WIDTH;
         str++;
     }
 }

@@ -92,6 +92,10 @@ void dispi_fill_pattern(int x, int y, int w, int h, unsigned char pattern[8]);
 void dispi_draw_char_bios(int x, int y, unsigned char c, unsigned char fg_color, unsigned char bg_color);
 void dispi_draw_string_bios(int x, int y, const char *str, unsigned char fg_color, unsigned char bg_color);
 
+/* 6x8 font support */
+void dispi_draw_char(int x, int y, unsigned char c, unsigned char fg, unsigned char bg);
+void dispi_draw_string(int x, int y, const char *str, unsigned char fg, unsigned char bg);
+
 /* Get the display driver for DISPI */
 struct DisplayDriver* dispi_get_driver(void);
 

@@ -6,6 +6,36 @@ This file contains suggestions for improvements and enhancements noticed while w
 
 ---
 
+### 1. Extract Stack Monitoring to Debug Module
+**Description:** The stack monitoring functions (get_esp, get_stack_usage, get_max_stack_usage) could be moved to a debug.c/h module along with the stack reporting logic from the main loop.
+
+**Why beneficial:**
+- Cleaner separation of debug/monitoring code
+- Makes kernel.c more focused on core functionality
+- Could add more debug utilities in one place
+
+**Implementation approach:**
+- Create debug.c/h with stack monitoring functions
+- Move periodic stack reporting from main loop
+- Could add memory usage reporting, performance counters
+
+---
+
+### 2. Create Initialization Module
+**Description:** The initialization sequence in kernel_main could be extracted to an init.c module that handles all subsystem initialization in order.
+
+**Why beneficial:**
+- Simplifies kernel_main
+- Makes dependencies between subsystems clearer
+- Easier to modify init order if needed
+
+**Implementation approach:**
+- Create init.c with init_all() function
+- Move all init_* calls there
+- Document initialization order dependencies
+
+---
+
 ### 3. Mouse Acceleration Curve
 **Description:** Implement a simple acceleration curve for mouse movement instead of linear scaling.
 
