@@ -218,6 +218,29 @@ Both graphics modes feature:
 - Keyboard input handling (ESC to exit)
 - Proper state preservation when returning to text mode
 
+### View System and Layout Manager
+
+The editor includes a hierarchical view system and layout manager for building complex UI components:
+
+#### View System
+- **Hierarchical structure**: Views can have parent-child relationships
+- **Event handling**: Each view can handle keyboard and mouse events
+- **Custom drawing**: Views implement their own draw methods using graphics context
+- **Invalidation tracking**: Automatic tracking of which views need redrawing
+- **Hit testing**: Find which view is under the mouse cursor
+- **Focus management**: Track which view has keyboard focus
+
+#### Layout Manager
+- **7×6 Region Grid**: Screen divided into 7 columns × 6 rows of regions (90×80 pixels each)
+- **Region-based positioning**: Views are positioned and sized in region units
+- **Navigator-Target relationships**: Acme-style linked panes where one controls another
+- **Layout types**:
+  - Single: One view fills entire screen
+  - Split: Navigator on left, target on right with optional divider bar
+  - Custom: Arbitrary arrangement of regions
+- **Vertical bar**: 10-pixel moveable divider between columns
+- **Active region tracking**: Highlights the currently focused region
+
 ### Interactive Commands & Links
 
 The editor supports Acme-inspired interactive elements that execute when clicked with the mouse:
@@ -229,6 +252,7 @@ Commands perform actions and can insert output into the text:
 - **$rename [name]**: Sets the name of the current page (appears in navigation bar)
 - **$graphics**: Launches VGA mode 12h graphics demo
 - **$dispi**: Launches DISPI/VBE graphics demo with text rendering
+- **$layout**: Launches layout and view system demo showcasing UI components
 
 When clicking a command, it intelligently handles output insertion:
 - Uses existing whitespace when available
@@ -252,11 +276,36 @@ Navigation history is automatically tracked, allowing #back to retrace your step
 - `0xB8000` - VGA text buffer
 - `0x200000` - Stack (2MB mark, grows downward)
 
+## API Examples
+
+### Creating a Simple View
+```c
+/* Create a view that fills 2x2 regions */
+View *my_view = view_create(1, 1, 2, 2);
+
+/* Set custom draw function */
+my_view->draw = my_custom_draw;
+my_view->handle_event = my_event_handler;
+
+/* Add to layout */
+layout_set_region_content(layout, 1, 1, 2, 2, my_view);
+```
+
+### Setting Up Split Layout
+```c
+/* Create navigator and target views */
+View *navigator = view_create(0, 0, 3, 6);
+View *target = view_create(3, 0, 4, 6);
+
+/* Set up split layout with bar at column 3 */
+layout_set_split(layout, navigator, target, 3);
+```
+
 ## How It Works
 
 ### Boot Process
 1. BIOS loads boot sector to `0x7C00`
-2. Bootloader loads kernel from IDE hard drive to `0x8000` (90 sectors = 45KB)
+2. Bootloader loads kernel from IDE hard drive to `0x8000` (144 sectors = 72KB)
 3. Bootloader enables A20 line for >1MB memory access
 4. Bootloader switches CPU to 32-bit protected mode
 5. Bootloader jumps to kernel entry point
@@ -313,3 +362,10 @@ The navigation bar displays:
 - **Graphics drivers**: Abstracted display driver interface supporting both VGA and DISPI
 - **Memory management**: Bump allocator with ~300KB allocated for double buffering
 - **Bootloader**: Loads up to 144 sectors (72KB) of kernel code
+- **UI Architecture**: Layered system from device drivers up to layout management:
+  - Display drivers (VGA/DISPI abstraction)
+  - Graphics primitives (lines, circles, rectangles)
+  - Graphics context (clipping, translation, patterns)
+  - Grid system (cells and regions)
+  - View system (hierarchical UI components)
+  - Layout manager (screen organization)

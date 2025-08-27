@@ -4,6 +4,9 @@
 #include "rtc.h"
 #include "serial.h"
 #include "vga.h"
+#include "graphics.h"
+#include "dispi_demo.h"
+#include "layout_demo.h"
 
 /* Execute a command that starts with $ */
 void execute_command(Page* page, int cmd_start, int cmd_end) {
@@ -257,6 +260,17 @@ void execute_command(Page* page, int cmd_start, int cmd_end) {
         
         /* Test the DISPI driver */
         test_dispi_driver();
+        
+        /* Screen needs to be redrawn after returning from graphics mode */
+        refresh_screen();
+    } else if (cmd_len == 7 && cmd_name[1] == 'l' && cmd_name[2] == 'a' && 
+               cmd_name[3] == 'y' && cmd_name[4] == 'o' && cmd_name[5] == 'u' && 
+               cmd_name[6] == 't') {
+        /* $layout command - test layout and view system */
+        serial_write_string("Testing layout and view system\n");
+        
+        /* Test the layout demo */
+        test_layout_demo();
         
         /* Screen needs to be redrawn after returning from graphics mode */
         refresh_screen();

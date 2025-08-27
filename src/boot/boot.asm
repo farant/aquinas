@@ -113,7 +113,7 @@ dap2:
 dap3:
     db 0x10             ; Size of packet (16 bytes)
     db 0                ; Reserved (0)
-    dw 16               ; Number of sectors to read (8KB)
+    dw 24               ; Number of sectors to read (12KB)
     dw 0x0000           ; Offset to load to
     dw 0x1800           ; Segment to load to (0x1800:0x0000 = physical 0x18000)
     dd 129              ; Starting LBA (sector 129, after first 128 sectors)
