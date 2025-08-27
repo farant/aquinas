@@ -10,11 +10,12 @@ start:
     mov ss, ax
     mov sp, 0x7C00
     
-    ; Load kernel from sector 2 to 0x8000 (simpler address)
-    mov ax, 0x0250      ; Read 80 sectors (40KB) - increased for larger kernel with font
-    mov cx, 0x0002      ; Cylinder 0, Sector 2
-    mov dx, 0x0080      ; Head 0, Drive 0x80 (first hard disk)
-    mov bx, 0x8000      ; Load to 0x8000
+    ; Load kernel using extended BIOS functions (LBA mode)
+    ; This is more reliable than CHS for loading large amounts
+    
+    mov si, dap         ; Point to Disk Address Packet
+    mov ah, 0x42        ; Extended Read
+    mov dl, 0x80        ; Drive 0x80
     int 0x13
     jc error
     
@@ -75,6 +76,17 @@ gdt_end:
 gdt_descriptor:
     dw gdt_end - gdt_start - 1
     dd gdt_start
+
+; Disk Address Packet for LBA read
+align 4
+dap:
+    db 0x10             ; Size of packet (16 bytes)
+    db 0                ; Reserved (0)
+    dw 90               ; Number of sectors to read (45KB)
+    dw 0x8000           ; Offset to load to
+    dw 0x0000           ; Segment to load to
+    dd 1                ; Starting LBA (sector 1, after boot sector)
+    dd 0                ; Upper 32-bits of LBA (0 for disks < 2TB)
 
 times 510-($-$$) db 0
 dw 0xAA55

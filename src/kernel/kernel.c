@@ -37,6 +37,7 @@
 #include "graphics.h"
 #include "dispi.h"
 #include "display_driver.h"
+#include "font_6x8.h"
 
 /* From graphics.c - VGA state functions */
 void save_vga_font(void);
@@ -1961,21 +1962,50 @@ unsigned int get_max_stack_usage(void) {
     return max_usage;
 }
 
+/* Text rendering functions for DISPI - use display driver interface */
+static void dispi_draw_char(int x, int y, unsigned char c, unsigned char fg, unsigned char bg) {
+    const unsigned char *char_data;
+    int row, col;
+    unsigned char byte;
+    
+    /* Get character bitmap from 6x8 font */
+    char_data = font_hp100lx_6x8[c];
+    
+    for (row = 0; row < FONT_hp100lx_HEIGHT; row++) {
+        byte = char_data[row];
+        
+        /* Draw 6 columns */
+        for (col = 0; col < FONT_hp100lx_WIDTH; col++) {
+            if (byte & (0x80 >> col)) {
+                display_set_pixel(x + col, y + row, fg);
+            } else if (bg != 255) {  /* 255 = transparent */
+                display_set_pixel(x + col, y + row, bg);
+            }
+        }
+    }
+}
+
+static void dispi_draw_string(int x, int y, const char *str, unsigned char fg, unsigned char bg) {
+    while (*str) {
+        dispi_draw_char(x, y, (unsigned char)*str, fg, bg);
+        x += FONT_hp100lx_WIDTH;
+        str++;
+    }
+}
+
 /* Test DISPI driver - recreate graphics demo using new display driver interface */
 void test_dispi_driver(void) {
     DisplayDriver *driver;
     int running = 1;
-    int animation_frame = 0;
-    unsigned int last_frame_time;
     unsigned int current_time;
-    int x_pos = 0;
-    int y_pos = 0; 
-    int prev_x_pos = 0;
-    int prev_y_pos = 0;
-    int color = 1;
     int key;
     int i, x, y;
     unsigned char aquinas_palette[16][3];
+    int cursor_x = 20, cursor_y = 50;  /* Cursor position for text input */
+    int cursor_visible = 1;
+    unsigned int cursor_blink_time = 0;
+    char input_buffer[80];
+    int input_len = 0;
     
     serial_write_string("Starting DISPI driver demo\n");
     
@@ -2030,91 +2060,54 @@ void test_dispi_driver(void) {
     /* Clear screen with medium gray background */
     display_clear(15);  /* Use color 15 for background */
     
-    /* Draw title text (simplified - just rectangles for now) */
-    display_fill_rect(20, 5, 300, 16, 5);  /* White bar for title */
-    display_fill_rect(22, 7, 296, 12, 0);  /* Black text area */
+    /* Draw title text using DISPI text rendering */
+    dispi_draw_string(20, 10, "DISPI Graphics Demo with Text Rendering", 0, 255);
+    
+    /* Draw instructions */
+    dispi_draw_string(20, 25, "Type text below. Press ESC to exit.", 5, 255);
+    
+    /* Draw text input area */
+    display_fill_rect(20, 48, 600, 20, 0);  /* Black input area */
+    
+    /* Initialize input buffer */
+    for (i = 0; i < 80; i++) {
+        input_buffer[i] = '\0';
+    }
     
     /* Grayscale showcase */
-    display_fill_rect(20, 40, 60, 60, 0);   /* Black */
-    display_fill_rect(90, 40, 60, 60, 1);   /* Dark gray */
-    display_fill_rect(160, 40, 60, 60, 2);  /* Medium dark gray */
-    display_fill_rect(230, 40, 60, 60, 3);  /* Medium gray */
-    display_fill_rect(300, 40, 60, 60, 4);  /* Light gray */
-    display_fill_rect(370, 40, 60, 60, 5);  /* White */
+    display_fill_rect(20, 80, 60, 60, 0);   /* Black */
+    display_fill_rect(90, 80, 60, 60, 1);   /* Dark gray */
+    display_fill_rect(160, 80, 60, 60, 2);  /* Medium dark gray */
+    display_fill_rect(230, 80, 60, 60, 3);  /* Medium gray */
+    display_fill_rect(300, 80, 60, 60, 4);  /* Light gray */
+    display_fill_rect(370, 80, 60, 60, 5);  /* White */
     
     /* Red showcase */
-    display_fill_rect(20, 120, 100, 50, 6);   /* Dark red */
-    display_fill_rect(130, 120, 100, 50, 7);  /* Medium red */
-    display_fill_rect(240, 120, 100, 50, 8);  /* Bright red */
+    display_fill_rect(20, 160, 100, 50, 6);   /* Dark red */
+    display_fill_rect(130, 160, 100, 50, 7);  /* Medium red */
+    display_fill_rect(240, 160, 100, 50, 8);  /* Bright red */
     
     /* Gold showcase */
-    display_fill_rect(20, 190, 100, 50, 9);   /* Dark gold */
-    display_fill_rect(130, 190, 100, 50, 10); /* Medium gold */
-    display_fill_rect(240, 190, 100, 50, 11); /* Bright yellow-gold */
+    display_fill_rect(20, 230, 100, 50, 9);   /* Dark gold */
+    display_fill_rect(130, 230, 100, 50, 10); /* Medium gold */
+    display_fill_rect(240, 230, 100, 50, 11); /* Bright yellow-gold */
     
     /* Cyan showcase */
-    display_fill_rect(20, 260, 100, 50, 12);  /* Dark cyan */
-    display_fill_rect(130, 260, 100, 50, 13); /* Medium cyan */
-    display_fill_rect(240, 260, 100, 50, 14); /* Bright cyan */
+    display_fill_rect(20, 300, 100, 50, 12);  /* Dark cyan */
+    display_fill_rect(130, 300, 100, 50, 13); /* Medium cyan */
+    display_fill_rect(240, 300, 100, 50, 14); /* Bright cyan */
     
-    /* UI element demos */
-    display_fill_rect(10, 320, 620, 30, 1);    /* Status bar (dark gray) */
-    display_fill_rect(15, 325, 100, 20, 6);    /* Command button (dark red) */
-    display_fill_rect(120, 325, 100, 20, 12);  /* Link button (dark cyan) */
-    display_fill_rect(225, 325, 100, 20, 10);  /* Highlighted item (medium gold) */
-    display_fill_rect(330, 325, 100, 20, 8);   /* Selected item (bright red) */
+    /* Draw some sample text to demonstrate rendering */
+    dispi_draw_string(20, 365, "Sample Text: The quick brown fox jumps over the lazy dog.", 11, 0);
+    dispi_draw_string(20, 375, "Colors: ", 5, 255);
+    dispi_draw_string(70, 375, "Red ", 8, 255);
+    dispi_draw_string(100, 375, "Gold ", 11, 255);
+    dispi_draw_string(135, 375, "Cyan ", 14, 255);
+    dispi_draw_string(170, 375, "White", 5, 255);
     
-    /* Border demo */
-    display_fill_rect(450, 120, 150, 100, 2);   /* Border (medium dark gray) */
-    display_fill_rect(455, 125, 140, 90, 15);   /* Background inside */
-    
-    /* Draw lines using pixels (simplified Bresenham) */
-    /* Horizontal line */
-    for (x = 360; x <= 440; x++) {
-        display_set_pixel(x, 380, 5);  /* White */
-    }
-    /* Vertical line */
-    for (y = 340; y <= 420; y++) {
-        display_set_pixel(400, y, 5);  /* White */
-    }
-    /* Diagonal lines */
-    for (i = 0; i <= 80; i++) {
-        display_set_pixel(360 + i, 340 + i, 12);  /* Diagonal \ - dark cyan */
-        display_set_pixel(360 + i, 420 - i, 6);   /* Diagonal / - dark red */
-    }
-    
-    /* Rectangle outlines */
-    /* Outer rectangle */
-    for (x = 460; x <= 540; x++) {
-        display_set_pixel(x, 360, 10);  /* Top - medium gold */
-        display_set_pixel(x, 420, 10);  /* Bottom */
-    }
-    for (y = 360; y <= 420; y++) {
-        display_set_pixel(460, y, 10);  /* Left */
-        display_set_pixel(540, y, 10);  /* Right */
-    }
-    
-    /* Inner rectangle */
-    for (x = 470; x <= 530; x++) {
-        display_set_pixel(x, 370, 11);  /* Top - bright yellow-gold */
-        display_set_pixel(x, 410, 11);  /* Bottom */
-    }
-    for (y = 370; y <= 410; y++) {
-        display_set_pixel(470, y, 11);  /* Left */
-        display_set_pixel(530, y, 11);  /* Right */
-    }
-    
-    /* Simple circle approximation (octagon) */
-    /* Draw three concentric circles at (560, 380) */
-    draw_dispi_circle(560, 380, 30, 12);  /* Large - dark cyan */
-    draw_dispi_circle(560, 380, 20, 6);   /* Medium - dark red */
-    draw_dispi_circle(560, 380, 10, 8);   /* Small - bright red */
-    
-    /* Instructions bar */
-    display_fill_rect(20, 460, 400, 16, 1);   /* Dark gray bar */
-    
-    /* Initialize timing */
-    last_frame_time = get_ticks();
+    /* Draw initial cursor in text input area */
+    cursor_blink_time = get_ticks();
+    display_fill_rect(cursor_x + 2, cursor_y + 6, 6, 2, 11);  /* Yellow underline cursor */
     
     serial_write_string("DISPI demo displayed. Press ESC to exit.\n");
     
@@ -2125,43 +2118,46 @@ void test_dispi_driver(void) {
         if (key == 27) { /* ESC - ASCII value */
             running = 0;
             serial_write_string("ESC pressed, exiting DISPI demo\n");
+        } else if (key == 8 && input_len > 0) {
+            /* Backspace - erase last character */
+            input_len--;
+            input_buffer[input_len] = '\0';
+            cursor_x -= 6;
+            /* Erase character and cursor */
+            display_fill_rect(cursor_x + 2, cursor_y, 6, 8, 0);
+        } else if (key == 13) {
+            /* Enter - clear input and move to new line */
+            display_fill_rect(20, 48, 600, 20, 0);  /* Clear input area */
+            cursor_x = 20;
+            input_len = 0;
+            for (i = 0; i < 80; i++) {
+                input_buffer[i] = '\0';
+            }
+        } else if (key > 31 && key < 127 && input_len < 79) {
+            /* Regular printable character */
+            input_buffer[input_len] = (char)key;
+            input_len++;
+            
+            /* Draw the character */
+            dispi_draw_char(cursor_x + 2, cursor_y, (char)key, 11, 0);
+            cursor_x += 6;
         }
         
-        /* Get current time */
+        /* Update cursor blinking */
         current_time = get_ticks();
-        
-        /* Update animation (20 FPS) */
-        if (current_time - last_frame_time >= 50) {
-            /* Clear previous animated rectangle */
-            if (animation_frame > 0) {
-                display_fill_rect(380 + prev_x_pos, 240 + prev_y_pos, 60, 40, 15);
-            }
+        if (current_time - cursor_blink_time >= 500) {
+            cursor_visible = !cursor_visible;
+            cursor_blink_time = current_time;
             
-            /* Save current position */
-            prev_x_pos = x_pos;
-            prev_y_pos = y_pos;
-            
-            /* Update position and color */
-            animation_frame++;
-            x_pos = (animation_frame * 2) % 40;
-            y_pos = (animation_frame) % 30;
-            
-            /* Cycle through colors */
-            if ((animation_frame / 10) % 4 == 0) {
-                color = 11;  /* Bright yellow-gold */
-            } else if ((animation_frame / 10) % 4 == 1) {
-                color = 14;  /* Bright cyan */
-            } else if ((animation_frame / 10) % 4 == 2) {
-                color = 10;  /* Medium gold */
+            if (cursor_visible) {
+                /* Draw cursor */
+                display_fill_rect(cursor_x + 2, cursor_y + 6, 6, 2, 11);
             } else {
-                color = 13;  /* Medium cyan */
+                /* Erase cursor */
+                display_fill_rect(cursor_x + 2, cursor_y + 6, 6, 2, 0);
             }
-            
-            /* Draw new animated rectangle */
-            display_fill_rect(380 + x_pos, 240 + y_pos, 60, 40, color);
-            
-            last_frame_time = current_time;
         }
+        
     }
     
     /* Return to text mode - save font, disable DISPI, restore VGA state */

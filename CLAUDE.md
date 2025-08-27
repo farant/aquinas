@@ -60,9 +60,10 @@ The kernel has UART debug output via COM2 (0x2F8) that can be used for debugging
 
 ## Troubleshooting
 
-### Stuck at BIOS / Boot Loop / No Input
-If the OS is stuck at BIOS, in a boot loop, or input (keyboard/mouse) stops working, **ALWAYS check that the bootloader is loading enough sectors for the kernel size**. 
+### Stuck at BIOS / Boot Loop / No Input / Blank Screen in Graphics Mode
+If the OS is stuck at BIOS, in a boot loop, input (keyboard/mouse) stops working, or graphics mode shows blank/incomplete display, **ALWAYS check that the bootloader is loading enough sectors for the kernel size**. 
 - Check kernel size in build output
-- Check boot.asm line: `mov ax, 0x021E` (where 1E = 30 sectors = 15KB)
+- Check boot.asm line: `mov ax, 0x02A0` (where A0 = 160 sectors = 80KB)
 - Increase sector count if kernel has grown beyond current allocation
+- Current allocation: 160 sectors (80KB) as of DISPI implementation
 
