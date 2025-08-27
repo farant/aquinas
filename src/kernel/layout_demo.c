@@ -62,18 +62,19 @@ static void colored_view_draw(View *self, GraphicsContext *gc) {
     
     /* Draw label if present */
     if (cv->label) {
+        /* Use white text on the view's background color */
         dispi_draw_string_bios(x + 10, y + 10, cv->label, 15, cv->color);
     }
     
-    /* Draw counter */
-    if (cv->counter > 0) {
+    /* Always draw counter (even if 0) to show it's clickable */
+    {
         char buf[20];
         int i = 0, temp = cv->counter;
         
         /* Simple integer to string conversion */
-        buf[0] = 'C'; buf[1] = 'o'; buf[2] = 'u'; buf[3] = 'n'; buf[4] = 't'; 
-        buf[5] = ':'; buf[6] = ' ';
-        i = 7;
+        buf[0] = 'C'; buf[1] = 'l'; buf[2] = 'i'; buf[3] = 'c'; buf[4] = 'k'; 
+        buf[5] = 's'; buf[6] = ':'; buf[7] = ' ';
+        i = 8;
         
         if (temp == 0) {
             buf[i++] = '0';
@@ -96,6 +97,7 @@ static void colored_view_draw(View *self, GraphicsContext *gc) {
         }
         buf[i] = '\0';
         
+        /* Use white text on the view's background color */
         dispi_draw_string_bios(x + 10, y + 30, buf, 15, cv->color);
     }
 }
@@ -107,7 +109,7 @@ static void colored_view_update(View *self, int delta_ms) {
 static int colored_view_handle_event(View *self, InputEvent *event) {
     ColoredView *cv = (ColoredView*)self;
     
-    if (event->type == EVENT_MOUSE_CLICK) {
+    if (event->type == EVENT_MOUSE_DOWN) {
         /* Increment counter on click */
         cv->counter++;
         view_invalidate(self);
@@ -162,8 +164,31 @@ static void list_view_draw(View *self, GraphicsContext *gc) {
 
 static int list_view_handle_event(View *self, InputEvent *event) {
     ListView *lv = (ListView*)self;
+    RegionRect abs_bounds;
+    int x, y, item_y, i;
     
-    if (event->type == EVENT_KEY_DOWN) {
+    if (event->type == EVENT_MOUSE_DOWN) {
+        /* Get view bounds */
+        view_get_absolute_bounds(self, &abs_bounds);
+        grid_region_to_pixel(abs_bounds.x, abs_bounds.y, &x, &y);
+        
+        /* Calculate which item was clicked */
+        item_y = y + 25;  /* Start position of items */
+        for (i = 0; i < lv->item_count && i < 10; i++) {
+            if (event->data.mouse.y >= item_y && event->data.mouse.y < item_y + 16) {
+                /* This item was clicked */
+                lv->selected_item = i;
+                view_invalidate(self);
+                
+                serial_write_string("List item clicked: ");
+                serial_write_string(lv->items[i]);
+                serial_write_string("\n");
+                
+                return 1;
+            }
+            item_y += 16;
+        }
+    } else if (event->type == EVENT_KEY_DOWN) {
         if (event->data.keyboard.key == -1) {  /* Up arrow */
             if (lv->selected_item > 0) {
                 lv->selected_item--;
@@ -421,8 +446,10 @@ void test_layout_demo(void) {
     view3 = create_colored_view(2, 4, 5, 2, 12, "Cyan Region");
     
     /* Add child views to demonstrate hierarchy */
-    child1 = (View*)create_colored_view(1, 0, 2, 1, 11, "Child 1");
-    child2 = (View*)create_colored_view(3, 1, 1, 1, 14, "Child 2");
+    /* Children should be positioned relative to parent, not absolute */
+    /* view1 is at (2,0), so child positions are offsets from that */
+    child1 = (View*)create_colored_view(0, 0, 2, 1, 11, "Child 1");  /* Top-left of parent */
+    child2 = (View*)create_colored_view(2, 1, 1, 1, 14, "Child 2");  /* Bottom-right area */
     view_add_child((View*)view1, child1);
     view_add_child((View*)view1, child2);
     
@@ -576,9 +603,8 @@ void test_layout_demo(void) {
             dispi_cursor_show();
             
             /* Now flip buffers to show everything */
-            if (dispi_is_double_buffered()) {
-                dispi_flip_buffers();
-            }
+            /* Even if double buffering failed, still try to flip */
+            dispi_flip_buffers();
             
             need_redraw = 0;  /* Clear the flag */
         }
