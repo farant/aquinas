@@ -614,6 +614,43 @@ static int abs(int n) {
     return n < 0 ? -n : n;
 }
 
+/* Blit with transparency - pixels matching transparent_color are not drawn */
+void dispi_blit_transparent(int x, int y, int w, int h, unsigned char *src, int src_stride, unsigned char transparent_color) {
+    int row, col;
+    int src_x, src_y;
+    unsigned char pixel;
+    unsigned char *target = double_buffered ? backbuffer : framebuffer;
+    
+    /* Clip to screen bounds */
+    int x_start = (x < 0) ? 0 : x;
+    int y_start = (y < 0) ? 0 : y;
+    int x_end = (x + w > DISPI_WIDTH) ? DISPI_WIDTH : x + w;
+    int y_end = (y + h > DISPI_HEIGHT) ? DISPI_HEIGHT : y + h;
+    
+    if (x_start >= x_end || y_start >= y_end) {
+        return;
+    }
+    
+    /* Blit the visible portion */
+    for (row = y_start; row < y_end; row++) {
+        src_y = row - y;
+        for (col = x_start; col < x_end; col++) {
+            src_x = col - x;
+            pixel = src[src_y * src_stride + src_x];
+            
+            /* Only draw if not transparent */
+            if (pixel != transparent_color) {
+                target[row * DISPI_WIDTH + col] = pixel;
+            }
+        }
+    }
+    
+    /* Mark the affected area as dirty */
+    if (double_buffered) {
+        dispi_mark_dirty(x_start, y_start, x_end - x_start, y_end - y_start);
+    }
+}
+
 /* Draw a line using Bresenham's algorithm */
 void dispi_draw_line(int x0, int y0, int x1, int y1, unsigned char color) {
     int dx = abs(x1 - x0);
@@ -678,6 +715,80 @@ void dispi_draw_circle(int cx, int cy, int radius, unsigned char color) {
     /* Mark the circle's bounding box as dirty */
     if (double_buffered) {
         dispi_mark_dirty(cx - radius, cy - radius, radius * 2 + 1, radius * 2 + 1);
+    }
+}
+
+/* Fill a circle using scanline algorithm */
+void dispi_fill_circle(int cx, int cy, int radius, unsigned char color) {
+    int x = 0;
+    int y = radius;
+    int d = 3 - 2 * radius;
+    
+    /* Draw center line */
+    dispi_hline_fast(cx - radius, cy, radius * 2 + 1, color);
+    
+    while (x <= y) {
+        /* Draw horizontal lines for each octant pair */
+        dispi_hline_fast(cx - y, cy + x, y * 2 + 1, color);
+        dispi_hline_fast(cx - y, cy - x, y * 2 + 1, color);
+        
+        if (x != 0) {
+            dispi_hline_fast(cx - x, cy + y, x * 2 + 1, color);
+            dispi_hline_fast(cx - x, cy - y, x * 2 + 1, color);
+        }
+        
+        if (d < 0) {
+            d = d + 4 * x + 6;
+        } else {
+            d = d + 4 * (x - y) + 10;
+            y--;
+        }
+        x++;
+    }
+    
+    /* Mark the circle's bounding box as dirty */
+    if (double_buffered) {
+        dispi_mark_dirty(cx - radius, cy - radius, radius * 2 + 1, radius * 2 + 1);
+    }
+}
+
+/* Fill rectangle with an 8x8 pattern */
+void dispi_fill_pattern(int x, int y, int w, int h, unsigned char pattern[8]) {
+    int row, col;
+    int pattern_y, pattern_x;
+    unsigned char pattern_byte;
+    unsigned char *target = double_buffered ? backbuffer : framebuffer;
+    
+    /* Clip to screen bounds */
+    int x_start = (x < 0) ? 0 : x;
+    int y_start = (y < 0) ? 0 : y;
+    int x_end = (x + w > DISPI_WIDTH) ? DISPI_WIDTH : x + w;
+    int y_end = (y + h > DISPI_HEIGHT) ? DISPI_HEIGHT : y + h;
+    
+    if (x_start >= x_end || y_start >= y_end) {
+        return;
+    }
+    
+    /* Fill with pattern */
+    for (row = y_start; row < y_end; row++) {
+        pattern_y = (row - y) & 7;  /* Modulo 8 */
+        pattern_byte = pattern[pattern_y];
+        
+        for (col = x_start; col < x_end; col++) {
+            pattern_x = (col - x) & 7;  /* Modulo 8 */
+            
+            /* Check if bit is set in pattern */
+            if (pattern_byte & (0x80 >> pattern_x)) {
+                target[row * DISPI_WIDTH + col] = 15;  /* White */
+            } else {
+                target[row * DISPI_WIDTH + col] = 0;   /* Black */
+            }
+        }
+    }
+    
+    /* Mark the affected area as dirty */
+    if (double_buffered) {
+        dispi_mark_dirty(x_start, y_start, x_end - x_start, y_end - y_start);
     }
 }
 

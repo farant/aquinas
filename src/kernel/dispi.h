@@ -80,10 +80,13 @@ void dispi_flip_dirty_rects(void);
 /* Optimized drawing operations */
 void dispi_fill_rect_fast(int x, int y, int w, int h, unsigned char color);
 void dispi_hline_fast(int x, int y, int width, unsigned char color);
+void dispi_blit_transparent(int x, int y, int w, int h, unsigned char *src, int src_stride, unsigned char transparent_color);
 
 /* Graphics primitives */
 void dispi_draw_line(int x0, int y0, int x1, int y1, unsigned char color);
 void dispi_draw_circle(int cx, int cy, int radius, unsigned char color);
+void dispi_fill_circle(int cx, int cy, int radius, unsigned char color);
+void dispi_fill_pattern(int x, int y, int w, int h, unsigned char pattern[8]);
 
 /* BIOS font support (9x16) */
 void dispi_draw_char_bios(int x, int y, unsigned char c, unsigned char fg_color, unsigned char bg_color);

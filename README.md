@@ -153,6 +153,7 @@ Interactive test modes (press in DISPI mode):
 - **F**: Performance benchmark comparing regular vs optimized rectangle fills
 - **G**: Graphics primitives test (toggles display of lines, circles, BIOS font)
 - **R**: Grid system visualization (toggles grid overlay with mouse hover highlighting)
+- **C**: Graphics context test (demonstrates clipping, translation, and pattern fills)
 
 Performance optimizations:
 - Double buffering for flicker-free rendering
@@ -163,7 +164,17 @@ Performance optimizations:
 Graphics primitives:
 - Line drawing using Bresenham's algorithm
 - Circle drawing using midpoint circle algorithm
+- Filled circle drawing using scanline algorithm
 - BIOS 9×16 font rendering from saved VGA font data
+- Transparent blitting with color key support
+- Pattern fills with 8×8 bitmap patterns
+
+Graphics context system:
+- Clipping regions to restrict drawing to defined bounds
+- Translation to shift coordinate system origin
+- Pattern fill modes with built-in patterns (checkerboard, stripes, dots)
+- Context state management for colors and fill modes
+- Multiple contexts can draw to different screen regions
 
 Grid system (foundation for UI):
 - 71×30 cell grid (9×16 pixels per cell, matching VGA text mode)
