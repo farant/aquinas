@@ -38,6 +38,11 @@
 #include "dispi.h"
 #include "display_driver.h"
 
+/* From graphics.c - VGA state functions */
+void save_vga_font(void);
+void restore_vga_font(void);
+void restore_dac_palette(void);
+
 /* Page size is one screen minus the navigation bar */
 #define PAGE_SIZE ((VGA_HEIGHT - 1) * VGA_WIDTH)
 
@@ -1974,6 +1979,9 @@ void test_dispi_driver(void) {
     
     serial_write_string("Starting DISPI driver demo\n");
     
+    /* Save VGA font before switching to graphics mode */
+    save_vga_font();
+    
     /* Get the DISPI driver and set it as active */
     driver = dispi_get_driver();
     display_set_driver(driver);
@@ -2156,14 +2164,20 @@ void test_dispi_driver(void) {
         }
     }
     
-    /* Return to text mode - first disable DISPI, then set VGA text mode */
+    /* Return to text mode - save font, disable DISPI, restore VGA state */
     serial_write_string("Disabling DISPI and returning to text mode...\n");
     
     /* Disable DISPI first */
     dispi_disable();
     
+    /* Restore the standard EGA/VGA palette before switching to text mode */
+    restore_dac_palette();
+    
     /* Now set standard VGA text mode */
     set_mode_03h();
+    
+    /* Restore the VGA font if it was saved */
+    restore_vga_font();
     
     /* Clear screen to ensure clean text mode */
     vga_clear_screen();

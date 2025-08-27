@@ -460,6 +460,9 @@ void set_mode_03h(void) {
     /* Enable display */
     outb(0x3C0, 0x20);
     
+    /* Restore standard DAC palette for proper text mode colors */
+    restore_dac_palette();
+    
     serial_write_string("Text mode 0x03 restored\n");
 }
 
