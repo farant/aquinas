@@ -30,6 +30,8 @@ aquinas/
 │   │   ├── dispi_demo.c/h       # DISPI graphics demonstration
 │   │   ├── display_driver.c/h   # Display driver abstraction layer
 │   │   ├── dispi_cursor.c/h     # Mouse cursor for DISPI mode
+│   │   ├── view.c/h             # Hierarchical view system for UI
+│   │   ├── layout.c/h           # Layout manager for screen regions
 │   │   ├── pci.c/h              # PCI bus scanning for graphics devices
 │   │   ├── font_6x8.h           # HP 100LX bitmap font
 │   │   ├── text_renderer.c/h    # Text rendering for graphics modes
@@ -310,4 +312,4 @@ The navigation bar displays:
 - **Page storage**: Static array of 100 pages maximum
 - **Graphics drivers**: Abstracted display driver interface supporting both VGA and DISPI
 - **Memory management**: Bump allocator with ~300KB allocated for double buffering
-- **Bootloader**: Loads up to 120 sectors (60KB) of kernel code
+- **Bootloader**: Loads up to 144 sectors (72KB) of kernel code

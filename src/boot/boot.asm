@@ -25,6 +25,13 @@ start:
     int 0x13
     jc error
     
+    ; Load final 8KB (16 sectors) to 0x18000 (segment 0x1800:0x0000)
+    mov si, dap3        ; Point to third Disk Address Packet
+    mov ah, 0x42        ; Extended Read
+    mov dl, 0x80        ; Drive 0x80
+    int 0x13
+    jc error
+    
     ; Switch to protected mode
     cli
     lgdt [gdt_descriptor]
@@ -101,6 +108,15 @@ dap2:
     dw 0x0000           ; Offset to load to
     dw 0x1000           ; Segment to load to (0x1000:0x0000 = physical 0x10000)
     dd 65               ; Starting LBA (sector 65, after first 64 sectors)
+    dd 0                ; Upper 32-bits of LBA (0 for disks < 2TB)
+
+dap3:
+    db 0x10             ; Size of packet (16 bytes)
+    db 0                ; Reserved (0)
+    dw 16               ; Number of sectors to read (8KB)
+    dw 0x0000           ; Offset to load to
+    dw 0x1800           ; Segment to load to (0x1800:0x0000 = physical 0x18000)
+    dd 129              ; Starting LBA (sector 129, after first 128 sectors)
     dd 0                ; Upper 32-bits of LBA (0 for disks < 2TB)
 
 times 510-($-$$) db 0
