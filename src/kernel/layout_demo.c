@@ -9,6 +9,7 @@
 #include "view.h"
 #include "graphics_context.h"
 #include "display_driver.h"
+#include "dispi_init.h"
 #include "dispi.h"
 #include "dispi_cursor.h"
 #include "grid.h"
@@ -378,72 +379,18 @@ void test_layout_demo(void) {
     int running = 1;
     int key;
     unsigned int last_update = 0;
-    unsigned char aquinas_palette[16][3];
     
     serial_write_string("Starting Layout and View Demo\n");
     
-    /* Initialize grid system (required for DISPI) */
-    grid_init();
-    
-    /* Save VGA state */
-    serial_write_string("Saving VGA font...\n");
-    save_vga_font();
-    
-    /* Initialize DISPI driver */
-    serial_write_string("Getting DISPI driver...\n");
-    driver = dispi_get_driver();
+    /* Initialize DISPI graphics mode using common init */
+    driver = dispi_graphics_init();
     if (!driver) {
-        serial_write_string("ERROR: Failed to get DISPI driver\n");
+        serial_write_string("ERROR: Failed to initialize DISPI graphics\n");
         return;
     }
-    serial_write_string("Got driver, setting as active...\n");
-    display_set_driver(driver);
     
-    /* Enable double buffering */
-    if (!dispi_init_double_buffer()) {
-        serial_write_string("WARNING: Double buffering failed\n");
-    }
-    
-    /* Set up proper Aquinas color palette */
-    /* Aquinas palette - 8-bit values that match mode 12h after >> 2 */
-    /* Grayscale (0-5) */
-    aquinas_palette[0][0] = 0x00; aquinas_palette[0][1] = 0x00; aquinas_palette[0][2] = 0x00;  /* Black */
-    aquinas_palette[1][0] = 0x40; aquinas_palette[1][1] = 0x40; aquinas_palette[1][2] = 0x40;  /* Dark gray */
-    aquinas_palette[2][0] = 0x80; aquinas_palette[2][1] = 0x80; aquinas_palette[2][2] = 0x80;  /* Medium dark gray */
-    aquinas_palette[3][0] = 0xC0; aquinas_palette[3][1] = 0xC0; aquinas_palette[3][2] = 0xC0;  /* Medium gray */
-    aquinas_palette[4][0] = 0xE0; aquinas_palette[4][1] = 0xE0; aquinas_palette[4][2] = 0xE0;  /* Light gray */
-    aquinas_palette[5][0] = 0xFC; aquinas_palette[5][1] = 0xFC; aquinas_palette[5][2] = 0xFC;  /* White */
-    
-    /* Reds (6-8) */
-    aquinas_palette[6][0] = 0x80; aquinas_palette[6][1] = 0x20; aquinas_palette[6][2] = 0x20;  /* Dark red */
-    aquinas_palette[7][0] = 0xC0; aquinas_palette[7][1] = 0x30; aquinas_palette[7][2] = 0x30;  /* Medium red */
-    aquinas_palette[8][0] = 0xFC; aquinas_palette[8][1] = 0x40; aquinas_palette[8][2] = 0x40;  /* Bright red */
-    
-    /* Golds (9-11) */
-    aquinas_palette[9][0] = 0xA0; aquinas_palette[9][1] = 0x80; aquinas_palette[9][2] = 0x20;   /* Dark gold */
-    aquinas_palette[10][0] = 0xE0; aquinas_palette[10][1] = 0xC0; aquinas_palette[10][2] = 0x40; /* Medium gold */
-    aquinas_palette[11][0] = 0xFC; aquinas_palette[11][1] = 0xE0; aquinas_palette[11][2] = 0x60; /* Bright yellow-gold */
-    
-    /* Cyans (12-14) */
-    aquinas_palette[12][0] = 0x20; aquinas_palette[12][1] = 0x80; aquinas_palette[12][2] = 0xA0; /* Dark cyan */
-    aquinas_palette[13][0] = 0x40; aquinas_palette[13][1] = 0xC0; aquinas_palette[13][2] = 0xE0; /* Medium cyan */
-    aquinas_palette[14][0] = 0x60; aquinas_palette[14][1] = 0xE0; aquinas_palette[14][2] = 0xFC; /* Bright cyan */
-    
-    /* Background (15) */
-    aquinas_palette[15][0] = 0xB0; aquinas_palette[15][1] = 0xA0; aquinas_palette[15][2] = 0x80; /* Warm gray */
-    
-    /* Set the palette */
-    if (driver->set_palette) {
-        driver->set_palette(aquinas_palette);
-    }
-    
-    /* Initialize mouse system */
-    mouse_init(320, 240);
+    /* Set mouse callback for layout demo */
     mouse_set_callback(layout_demo_mouse_handler);
-    
-    /* Initialize mouse cursor for DISPI mode */
-    dispi_cursor_init();
-    dispi_cursor_show();
     
     /* Create graphics context */
     gc = gc_create(driver);
@@ -583,19 +530,9 @@ void test_layout_demo(void) {
     serial_write_string("Cleaning up layout demo\n");
     
     layout_destroy(layout);
-    gc_destroy(gc);
     
-    /* Cleanup double buffering */
-    if (dispi_is_double_buffered()) {
-        dispi_cleanup_double_buffer();
-    }
-    
-    /* Return to text mode */
-    dispi_disable();
-    restore_dac_palette();
-    set_mode_03h();
-    restore_vga_font();
-    vga_clear_screen();
+    /* Cleanup DISPI graphics mode using common cleanup */
+    dispi_graphics_cleanup(gc);
     
     serial_write_string("Layout demo complete\n");
 }

@@ -7,6 +7,7 @@
 #include "graphics.h"
 #include "dispi_demo.h"
 #include "layout_demo.h"
+#include "ui_demo.h"
 
 /* Execute a command that starts with $ */
 void execute_command(Page* page, int cmd_start, int cmd_end) {
@@ -271,6 +272,19 @@ void execute_command(Page* page, int cmd_start, int cmd_end) {
         
         /* Test the layout demo */
         test_layout_demo();
+        
+        /* Screen needs to be redrawn after returning from graphics mode */
+        refresh_screen();
+        
+        /* Clear highlight after command execution */
+        page->highlight_start = 0;
+        page->highlight_end = 0;
+    } else if (cmd_len == 3 && cmd_name[1] == 'u' && cmd_name[2] == 'i') {
+        /* $ui command - test UI component library */
+        serial_write_string("Testing UI component library\n");
+        
+        /* Test the UI demo */
+        test_ui_demo();
         
         /* Screen needs to be redrawn after returning from graphics mode */
         refresh_screen();

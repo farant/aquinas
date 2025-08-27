@@ -18,6 +18,7 @@
 #include "memory.h"
 #include "graphics.h"
 #include "dispi.h"
+#include "dispi_init.h"
 #include "display_driver.h"
 #include "font_6x8.h"
 #include "dispi_cursor.h"
@@ -27,11 +28,6 @@
 #include "input.h"
 #include "mouse.h"
 #include "view.h"  /* For InputEvent */
-
-/* From graphics.c - VGA state functions */
-void save_vga_font(void);
-void restore_vga_font(void);
-void restore_dac_palette(void);
 
 /* Helper function to draw a circle using DISPI */
 static void draw_dispi_circle(int cx, int cy, int r, unsigned char color) {
@@ -121,11 +117,11 @@ static void dispi_demo_mouse_handler(InputEvent *event) {
 /* Test DISPI driver - recreate graphics demo using new display driver interface */
 void test_dispi_driver(void) {
     DisplayDriver *driver;
+    GraphicsContext *gc;
     int running = 1;
     unsigned int current_time;
     int key;
     int i, x, y;
-    unsigned char aquinas_palette[16][3];
     int cursor_x = 20, cursor_y = 50;  /* Cursor position for text input */
     int cursor_visible = 1;
     unsigned int cursor_blink_time = 0;
@@ -138,75 +134,22 @@ void test_dispi_driver(void) {
     
     serial_write_string("Starting DISPI driver demo\n");
     
-    /* Initialize grid system */
-    grid_init();
-    
-    /* Save VGA font before switching to graphics mode */
-    save_vga_font();
-    
-    /* Get the DISPI driver and set it as active */
-    driver = dispi_get_driver();
-    serial_write_string("Got driver pointer: ");
-    serial_write_hex((unsigned int)driver);
-    serial_write_string(" with name ptr: ");
-    serial_write_hex((unsigned int)(driver ? driver->name : 0));
-    serial_write_string("\n");
-    display_set_driver(driver);
-    
-    /* Enable double buffering for smooth rendering */
-    if (!dispi_init_double_buffer()) {
-        serial_write_string("WARNING: Double buffering failed, using single buffer\n");
+    /* Initialize DISPI graphics mode using common init */
+    driver = dispi_graphics_init();
+    if (!driver) {
+        serial_write_string("ERROR: Failed to initialize DISPI graphics\n");
+        return;
     }
     
-    /* Simple test: fill screen with red first */
-    serial_write_string("Testing basic framebuffer fill...\n");
-    display_clear(4);  /* Fill with light gray to test basic framebuffer access */
+    /* Set mouse callback for dispi demo */
+    mouse_set_callback(dispi_demo_mouse_handler);
     
-    /* Flip buffers to show initial clear */
-    if (dispi_is_double_buffered()) {
-        dispi_flip_buffers();
+    /* Create graphics context */
+    gc = gc_create(driver);
+    if (!gc) {
+        serial_write_string("ERROR: Failed to create graphics context\n");
+        return;
     }
-    
-    /* Wait a moment to see if basic fill works */
-    for (i = 0; i < 10000000; i++) {
-        __asm__ volatile("nop");
-    }
-    
-    /* Set up Aquinas palette */
-    /* Aquinas palette - 8-bit values that match mode 12h after >> 2 */
-    /* Grayscale (0-5) */
-    aquinas_palette[0][0] = 0x00; aquinas_palette[0][1] = 0x00; aquinas_palette[0][2] = 0x00;  /* Black */
-    aquinas_palette[1][0] = 0x40; aquinas_palette[1][1] = 0x40; aquinas_palette[1][2] = 0x40;  /* Dark gray */
-    aquinas_palette[2][0] = 0x80; aquinas_palette[2][1] = 0x80; aquinas_palette[2][2] = 0x80;  /* Medium dark gray */
-    aquinas_palette[3][0] = 0xC0; aquinas_palette[3][1] = 0xC0; aquinas_palette[3][2] = 0xC0;  /* Medium gray */
-    aquinas_palette[4][0] = 0xE0; aquinas_palette[4][1] = 0xE0; aquinas_palette[4][2] = 0xE0;  /* Light gray */
-    aquinas_palette[5][0] = 0xFC; aquinas_palette[5][1] = 0xFC; aquinas_palette[5][2] = 0xFC;  /* White */
-    
-    /* Reds (6-8) */
-    aquinas_palette[6][0] = 0x80; aquinas_palette[6][1] = 0x20; aquinas_palette[6][2] = 0x20;  /* Dark red */
-    aquinas_palette[7][0] = 0xC0; aquinas_palette[7][1] = 0x30; aquinas_palette[7][2] = 0x30;  /* Medium red */
-    aquinas_palette[8][0] = 0xFC; aquinas_palette[8][1] = 0x40; aquinas_palette[8][2] = 0x40;  /* Bright red */
-    
-    /* Golds (9-11) */
-    aquinas_palette[9][0] = 0xA0; aquinas_palette[9][1] = 0x80; aquinas_palette[9][2] = 0x20;   /* Dark gold */
-    aquinas_palette[10][0] = 0xE0; aquinas_palette[10][1] = 0xC0; aquinas_palette[10][2] = 0x40; /* Medium gold */
-    aquinas_palette[11][0] = 0xFC; aquinas_palette[11][1] = 0xE0; aquinas_palette[11][2] = 0x60; /* Bright yellow-gold */
-    
-    /* Cyans (12-14) */
-    aquinas_palette[12][0] = 0x20; aquinas_palette[12][1] = 0x80; aquinas_palette[12][2] = 0xA0; /* Dark cyan */
-    aquinas_palette[13][0] = 0x40; aquinas_palette[13][1] = 0xC0; aquinas_palette[13][2] = 0xE0; /* Medium cyan */
-    aquinas_palette[14][0] = 0x60; aquinas_palette[14][1] = 0xE0; aquinas_palette[14][2] = 0xFC; /* Bright cyan */
-    
-    /* Background (15) */
-    aquinas_palette[15][0] = 0xB0; aquinas_palette[15][1] = 0xA0; aquinas_palette[15][2] = 0x80; /* Warm gray */
-    
-    /* Set the palette */
-    if (driver->set_palette) {
-        driver->set_palette(aquinas_palette);
-    }
-    
-    /* Clear screen with medium gray background */
-    display_clear(15);  /* Use color 15 for background */
     
     /* Draw title text using DISPI text rendering */
     dispi_draw_string(20, 10, "DISPI Graphics Demo with Optimized Rendering", 0, 255);
@@ -221,6 +164,9 @@ void test_dispi_driver(void) {
     for (i = 0; i < 80; i++) {
         input_buffer[i] = '\0';
     }
+    
+    /* Clear screen and redraw with warm gray background */
+    display_clear(15);  /* Use color 15 for background */
     
     /* Grayscale showcase */
     display_fill_rect(20, 80, 60, 60, 0);   /* Black */
@@ -256,14 +202,6 @@ void test_dispi_driver(void) {
     /* Draw initial cursor in text input area */
     cursor_blink_time = get_ticks();
     display_fill_rect(cursor_x + 2, cursor_y + 6, 6, 2, 11);  /* Yellow underline cursor */
-    
-    /* Initialize mouse system */
-    mouse_init(320, 240);
-    mouse_set_callback(dispi_demo_mouse_handler);
-    
-    /* Initialize and show mouse cursor */
-    dispi_cursor_init();
-    dispi_cursor_show();
     
     /* Flip buffers to show initial screen */
     if (dispi_is_double_buffered()) {
@@ -789,31 +727,8 @@ void test_dispi_driver(void) {
         
     }
     
-    /* Return to text mode - save font, disable DISPI, restore VGA state */
-    serial_write_string("Disabling DISPI and returning to text mode...\n");
-    
-    /* Hide mouse cursor before switching modes */
-    dispi_cursor_hide();
-    
-    /* Cleanup double buffering if enabled */
-    if (dispi_is_double_buffered()) {
-        dispi_cleanup_double_buffer();
-    }
-    
-    /* Disable DISPI first */
-    dispi_disable();
-    
-    /* Restore the standard EGA/VGA palette before switching to text mode */
-    restore_dac_palette();
-    
-    /* Now set standard VGA text mode */
-    set_mode_03h();
-    
-    /* Restore the VGA font if it was saved */
-    restore_vga_font();
-    
-    /* Clear screen to ensure clean text mode */
-    vga_clear_screen();
+    /* Cleanup DISPI graphics mode using common cleanup */
+    dispi_graphics_cleanup(gc);
     
     serial_write_string("Exited DISPI driver demo\n");
 }
