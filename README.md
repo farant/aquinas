@@ -17,8 +17,16 @@ aquinas/
 │   │   ├── serial.c         # Serial port communication (mouse & debug)
 │   │   ├── serial.h         # Serial port definitions
 │   │   ├── io.h             # Port I/O functions
-│   │   ├── vga.h            # VGA text mode definitions
-│   │   └── mouse.h          # Mouse protocol definitions
+│   │   ├── vga.c/h          # VGA text mode implementation
+│   │   ├── graphics.c/h     # VGA graphics mode (320x200 mode 12h)
+│   │   ├── dispi.c/h        # DISPI/VBE graphics driver (640x480)
+│   │   ├── display_driver.h # Display driver abstraction layer
+│   │   ├── dispi_cursor.c/h # Mouse cursor for DISPI mode
+│   │   ├── pci.c/h          # PCI bus scanning for graphics devices
+│   │   ├── font_6x8.h       # HP 100LX bitmap font
+│   │   ├── memory.c/h       # Memory management
+│   │   ├── timer.c/h        # Timer and timing functions
+│   │   └── rtc.c/h          # Real-time clock
 │   └── linker.ld            # Linker script
 ├── build/                   # Build outputs (gitignored)
 │   ├── *.o                  # Object files
@@ -123,6 +131,29 @@ The editor includes vim-style modal editing with three modes:
 - **ESC**: Return to normal mode (cancels selection)
 - Text selection is highlighted in red
 
+### Graphics Modes
+
+The system supports multiple graphics modes for visualization and demos:
+
+#### VGA Mode 12h (320×200, 16 colors)
+- **$graphics**: Launches VGA graphics demo with palette showcase and animations
+- 4-plane architecture with palette-indexed colors
+- Custom Aquinas palette optimized for grays, reds, golds, and cyans
+- Mouse cursor with black outline for visibility
+
+#### DISPI/VBE Mode (640×480, 256 colors)
+- **$dispi**: Launches DISPI graphics demo with text rendering
+- Linear framebuffer accessed via PCI detection
+- Text rendering with 6×8 pixel font
+- Interactive text input with blinking cursor
+- Full mouse support with arrow cursor
+- Smooth transition back to text mode
+
+Both graphics modes feature:
+- Real-time mouse cursor tracking
+- Keyboard input handling (ESC to exit)
+- Proper state preservation when returning to text mode
+
 ### Interactive Commands & Links
 
 The editor supports Acme-inspired interactive elements that execute when clicked with the mouse:
@@ -132,6 +163,8 @@ Commands perform actions and can insert output into the text:
 
 - **$date**: Inserts the current date and time (MM/DD/YYYY HH:MM format)
 - **$rename [name]**: Sets the name of the current page (appears in navigation bar)
+- **$graphics**: Launches VGA mode 12h graphics demo
+- **$dispi**: Launches DISPI/VBE graphics demo with text rendering
 
 When clicking a command, it intelligently handles output insertion:
 - Uses existing whitespace when available
@@ -159,7 +192,7 @@ Navigation history is automatically tracked, allowing #back to retrace your step
 
 ### Boot Process
 1. BIOS loads boot sector to `0x7C00`
-2. Bootloader loads kernel from IDE hard drive to `0x8000` (30 sectors = 15KB)
+2. Bootloader loads kernel from IDE hard drive to `0x8000` (90 sectors = 45KB)
 3. Bootloader enables A20 line for >1MB memory access
 4. Bootloader switches CPU to 32-bit protected mode
 5. Bootloader jumps to kernel entry point
