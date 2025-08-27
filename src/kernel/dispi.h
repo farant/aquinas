@@ -46,6 +46,14 @@
 #define DISPI_HEIGHT                    480
 #define DISPI_BPP                       8
 
+/* Dirty rectangle tracking */
+#define MAX_DIRTY_RECTS                 16
+
+typedef struct {
+    int x, y, w, h;
+    int valid;
+} DirtyRect;
+
 /* DISPI functions */
 void dispi_write(unsigned short index, unsigned short value);
 unsigned short dispi_read(unsigned short index);
@@ -63,6 +71,15 @@ void dispi_flip_buffers(void);
 unsigned char* dispi_get_backbuffer(void);
 void dispi_cleanup_double_buffer(void);
 int dispi_is_double_buffered(void);
+
+/* Dirty rectangle management */
+void dispi_mark_dirty(int x, int y, int w, int h);
+void dispi_clear_dirty(void);
+void dispi_flip_dirty_rects(void);
+
+/* Optimized drawing operations */
+void dispi_fill_rect_fast(int x, int y, int w, int h, unsigned char color);
+void dispi_hline_fast(int x, int y, int width, unsigned char color);
 
 /* Get the display driver for DISPI */
 struct DisplayDriver* dispi_get_driver(void);

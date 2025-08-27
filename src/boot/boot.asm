@@ -82,7 +82,7 @@ align 4
 dap:
     db 0x10             ; Size of packet (16 bytes)
     db 0                ; Reserved (0)
-    dw 90               ; Number of sectors to read (45KB)
+    dw 120              ; Number of sectors to read (60KB)
     dw 0x8000           ; Offset to load to
     dw 0x0000           ; Segment to load to
     dd 1                ; Starting LBA (sector 1, after boot sector)

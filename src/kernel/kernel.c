@@ -2078,10 +2078,10 @@ void test_dispi_driver(void) {
     display_clear(15);  /* Use color 15 for background */
     
     /* Draw title text using DISPI text rendering */
-    dispi_draw_string(20, 10, "DISPI Graphics Demo with Text Rendering", 0, 255);
+    dispi_draw_string(20, 10, "DISPI Graphics Demo with Optimized Rendering", 0, 255);
     
     /* Draw instructions */
-    dispi_draw_string(20, 25, "Type text below. Press ESC to exit.", 5, 255);
+    dispi_draw_string(20, 25, "Type text below. Press ESC to exit. F = Fill test", 5, 255);
     
     /* Draw text input area */
     display_fill_rect(20, 48, 600, 20, 0);  /* Black input area */
@@ -2199,6 +2199,101 @@ void test_dispi_driver(void) {
             for (i = 0; i < 80; i++) {
                 input_buffer[i] = '\0';
             }
+        } else if (key == 'F' || key == 'f') {
+            /* Fill test - compare regular vs optimized fills */
+            unsigned int start_time, end_time;
+            int test_x = 350, test_y = 160;
+            int test_rects = 100;
+            int rect;
+            
+            /* Test regular fill */
+            dispi_draw_string(test_x, test_y, "Testing regular fill...", 5, 0);
+            if (dispi_is_double_buffered()) {
+                dispi_flip_buffers();
+            }
+            
+            start_time = get_ticks();
+            for (rect = 0; rect < test_rects; rect++) {
+                display_fill_rect(test_x + (rect % 10) * 2, 
+                                  test_y + 20 + (rect / 10) * 2, 
+                                  20, 20, rect % 16);
+            }
+            end_time = get_ticks();
+            
+            dispi_draw_string(test_x, test_y + 45, "Regular: ", 5, 0);
+            /* Simple number display - just show the difference */
+            {
+                char num_str[10];
+                unsigned int diff = end_time - start_time;
+                int idx = 0;
+                if (diff == 0) {
+                    num_str[0] = '0';
+                    idx = 1;
+                } else {
+                    int temp = diff;
+                    while (temp > 0 && idx < 9) {
+                        num_str[idx++] = '0' + (temp % 10);
+                        temp /= 10;
+                    }
+                    /* Reverse the string */
+                    {
+                        int j;
+                        for (j = 0; j < idx/2; j++) {
+                            char tmp = num_str[j];
+                            num_str[j] = num_str[idx-1-j];
+                            num_str[idx-1-j] = tmp;
+                        }
+                    }
+                }
+                num_str[idx] = '\0';
+                dispi_draw_string(test_x + 60, test_y + 45, num_str, 11, 0);
+                dispi_draw_string(test_x + 60 + idx*6, test_y + 45, " ms", 5, 0);
+            }
+            
+            /* Test optimized fill */
+            dispi_draw_string(test_x, test_y + 60, "Testing optimized fill...", 5, 0);
+            if (dispi_is_double_buffered()) {
+                dispi_flip_buffers();
+            }
+            
+            start_time = get_ticks();
+            for (rect = 0; rect < test_rects; rect++) {
+                dispi_fill_rect_fast(test_x + (rect % 10) * 2,
+                                     test_y + 80 + (rect / 10) * 2,
+                                     20, 20, rect % 16);
+            }
+            end_time = get_ticks();
+            
+            dispi_draw_string(test_x, test_y + 105, "Optimized: ", 5, 0);
+            /* Simple number display - just show the difference */
+            {
+                char num_str[10];
+                unsigned int diff = end_time - start_time;
+                int idx = 0;
+                if (diff == 0) {
+                    num_str[0] = '0';
+                    idx = 1;
+                } else {
+                    int temp = diff;
+                    while (temp > 0 && idx < 9) {
+                        num_str[idx++] = '0' + (temp % 10);
+                        temp /= 10;
+                    }
+                    /* Reverse the string */
+                    {
+                        int j;
+                        for (j = 0; j < idx/2; j++) {
+                            char tmp = num_str[j];
+                            num_str[j] = num_str[idx-1-j];
+                            num_str[idx-1-j] = tmp;
+                        }
+                    }
+                }
+                num_str[idx] = '\0';
+                dispi_draw_string(test_x + 66, test_y + 105, num_str, 11, 0);
+                dispi_draw_string(test_x + 66 + idx*6, test_y + 105, " ms", 5, 0);
+            }
+            
         } else if (key > 31 && key < 127 && input_len < 79) {
             /* Regular printable character */
             input_buffer[input_len] = (char)key;

@@ -24,6 +24,10 @@ static int dispi_available = 0;
 static unsigned char* backbuffer = NULL;
 static int double_buffered = 0;
 
+/* Dirty rectangle tracking */
+static DirtyRect dirty_rects[MAX_DIRTY_RECTS];
+static int num_dirty_rects = 0;
+
 /* Write to DISPI register */
 void dispi_write(unsigned short index, unsigned short value) {
     port_word_out(VBE_DISPI_IOPORT_INDEX, index);
@@ -228,6 +232,10 @@ static void dispi_driver_set_pixel(int x, int y, unsigned char color) {
     unsigned char* target = double_buffered ? backbuffer : framebuffer;
     if (x >= 0 && x < DISPI_WIDTH && y >= 0 && y < DISPI_HEIGHT) {
         target[y * DISPI_WIDTH + x] = color;
+        /* Mark single pixel as dirty */
+        if (double_buffered) {
+            dispi_mark_dirty(x, y, 1, 1);
+        }
     }
 }
 
@@ -263,6 +271,11 @@ static void dispi_driver_fill_rect(int x, int y, int w, int h, unsigned char col
         }
         fb += DISPI_WIDTH;
     }
+    
+    /* Mark rectangle as dirty */
+    if (double_buffered) {
+        dispi_mark_dirty(x, y, w, h);
+    }
 }
 
 /* Blit a buffer to screen */
@@ -288,6 +301,11 @@ static void dispi_driver_blit(int x, int y, int w, int h, unsigned char *src, in
         }
         src += src_stride;
         fb += DISPI_WIDTH;
+    }
+    
+    /* Mark blitted area as dirty */
+    if (double_buffered) {
+        dispi_mark_dirty(x, y, w, h);
     }
 }
 
@@ -324,6 +342,11 @@ static void dispi_driver_clear_screen(unsigned char color) {
     /* Fill screen with color */
     for (i = 0; i < size; i++) {
         target[i] = color;
+    }
+    
+    /* Mark entire screen as dirty */
+    if (double_buffered) {
+        dispi_mark_dirty(0, 0, DISPI_WIDTH, DISPI_HEIGHT);
     }
 }
 
@@ -375,10 +398,15 @@ void dispi_flip_buffers(void) {
         return;
     }
     
-    /* Copy backbuffer to framebuffer
-     * This is where we'd ideally use hardware page flipping,
-     * but DISPI doesn't support multiple framebuffers */
-    memcpy(framebuffer, backbuffer, framebuffer_size);
+    /* If we have dirty rectangles, use optimized flip */
+    if (num_dirty_rects > 0) {
+        dispi_flip_dirty_rects();
+    } else {
+        /* No dirty rects tracked, copy entire buffer
+         * This is where we'd ideally use hardware page flipping,
+         * but DISPI doesn't support multiple framebuffers */
+        memcpy(framebuffer, backbuffer, framebuffer_size);
+    }
 }
 
 /* Get backbuffer for drawing */
@@ -404,4 +432,169 @@ void dispi_cleanup_double_buffer(void) {
 /* Check if double buffering is active */
 int dispi_is_double_buffered(void) {
     return double_buffered;
+}
+
+/* Mark a region as dirty (needs to be copied on next flip) */
+void dispi_mark_dirty(int x, int y, int w, int h) {
+    int i;
+    DirtyRect *rect;
+    
+    /* Clip to screen bounds */
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > DISPI_WIDTH) { w = DISPI_WIDTH - x; }
+    if (y + h > DISPI_HEIGHT) { h = DISPI_HEIGHT - y; }
+    
+    if (w <= 0 || h <= 0) return;
+    
+    /* Try to merge with existing rectangles first */
+    for (i = 0; i < num_dirty_rects; i++) {
+        rect = &dirty_rects[i];
+        if (!rect->valid) continue;
+        
+        /* Check if rectangles overlap or are adjacent */
+        if (!(x >= rect->x + rect->w || x + w <= rect->x ||
+              y >= rect->y + rect->h || y + h <= rect->y)) {
+            /* Merge by expanding existing rectangle */
+            int new_x = x < rect->x ? x : rect->x;
+            int new_y = y < rect->y ? y : rect->y;
+            int new_x2 = (x + w) > (rect->x + rect->w) ? (x + w) : (rect->x + rect->w);
+            int new_y2 = (y + h) > (rect->y + rect->h) ? (y + h) : (rect->y + rect->h);
+            
+            rect->x = new_x;
+            rect->y = new_y;
+            rect->w = new_x2 - new_x;
+            rect->h = new_y2 - new_y;
+            return;
+        }
+    }
+    
+    /* Add new rectangle if space available */
+    if (num_dirty_rects < MAX_DIRTY_RECTS) {
+        rect = &dirty_rects[num_dirty_rects];
+        rect->x = x;
+        rect->y = y;
+        rect->w = w;
+        rect->h = h;
+        rect->valid = 1;
+        num_dirty_rects++;
+    } else {
+        /* If out of space, mark entire screen as dirty */
+        dirty_rects[0].x = 0;
+        dirty_rects[0].y = 0;
+        dirty_rects[0].w = DISPI_WIDTH;
+        dirty_rects[0].h = DISPI_HEIGHT;
+        dirty_rects[0].valid = 1;
+        num_dirty_rects = 1;
+    }
+}
+
+/* Clear all dirty rectangles */
+void dispi_clear_dirty(void) {
+    int i;
+    for (i = 0; i < MAX_DIRTY_RECTS; i++) {
+        dirty_rects[i].valid = 0;
+    }
+    num_dirty_rects = 0;
+}
+
+/* Flip only dirty rectangles from backbuffer to framebuffer */
+void dispi_flip_dirty_rects(void) {
+    int i, row;
+    DirtyRect *rect;
+    unsigned char *src, *dst;
+    
+    if (!double_buffered || !backbuffer) {
+        return;
+    }
+    
+    /* If no dirty rects, nothing to flip */
+    if (num_dirty_rects == 0) {
+        return;
+    }
+    
+    /* Copy each dirty rectangle */
+    for (i = 0; i < num_dirty_rects; i++) {
+        rect = &dirty_rects[i];
+        if (!rect->valid) continue;
+        
+        /* Copy rectangle row by row */
+        for (row = 0; row < rect->h; row++) {
+            src = backbuffer + ((rect->y + row) * DISPI_WIDTH + rect->x);
+            dst = framebuffer + ((rect->y + row) * DISPI_WIDTH + rect->x);
+            memcpy(dst, src, rect->w);
+        }
+    }
+    
+    /* Clear dirty rectangles after flip */
+    dispi_clear_dirty();
+}
+
+/* Optimized horizontal line drawing using 32-bit writes when possible */
+void dispi_hline_fast(int x, int y, int width, unsigned char color) {
+    unsigned char *target;
+    unsigned int color32;
+    unsigned int *dst32;
+    int aligned_start, aligned_end;
+    int i;
+    
+    /* Bounds check */
+    if (y < 0 || y >= DISPI_HEIGHT) return;
+    if (x < 0) { width += x; x = 0; }
+    if (x + width > DISPI_WIDTH) { width = DISPI_WIDTH - x; }
+    if (width <= 0) return;
+    
+    target = double_buffered ? backbuffer : framebuffer;
+    target += y * DISPI_WIDTH + x;
+    
+    /* Handle unaligned start bytes */
+    aligned_start = (4 - ((unsigned int)target & 3)) & 3;
+    if (aligned_start > width) aligned_start = width;
+    
+    for (i = 0; i < aligned_start; i++) {
+        *target++ = color;
+    }
+    width -= aligned_start;
+    
+    /* Handle aligned middle with 32-bit writes */
+    if (width >= 4) {
+        color32 = color | (color << 8) | (color << 16) | (color << 24);
+        dst32 = (unsigned int*)target;
+        aligned_end = width / 4;
+        
+        for (i = 0; i < aligned_end; i++) {
+            *dst32++ = color32;
+        }
+        
+        target = (unsigned char*)dst32;
+        width &= 3;
+    }
+    
+    /* Handle remaining unaligned bytes */
+    for (i = 0; i < width; i++) {
+        *target++ = color;
+    }
+    
+    /* Mark as dirty */
+    if (double_buffered) {
+        dispi_mark_dirty(x, y, width + aligned_start, 1);
+    }
+}
+
+/* Optimized rectangle fill using fast horizontal lines */
+void dispi_fill_rect_fast(int x, int y, int w, int h, unsigned char color) {
+    int row;
+    
+    /* Clip to screen bounds */
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > DISPI_WIDTH) { w = DISPI_WIDTH - x; }
+    if (y + h > DISPI_HEIGHT) { h = DISPI_HEIGHT - y; }
+    
+    if (w <= 0 || h <= 0) return;
+    
+    /* Fill using optimized horizontal lines */
+    for (row = 0; row < h; row++) {
+        dispi_hline_fast(x, y + row, w, color);
+    }
 }
