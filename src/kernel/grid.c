@@ -193,6 +193,7 @@ int grid_validate_region_rect(RegionRect *rect) {
 /* Draw outline around a cell */
 void grid_draw_cell_outline(int col, int row, unsigned char color) {
     int x, y;
+    int cell_region;
     DisplayDriver *driver = display_get_driver();
     
     if (!driver) return;
@@ -200,7 +201,7 @@ void grid_draw_cell_outline(int col, int row, unsigned char color) {
     grid_cell_to_pixel(col, row, &x, &y);
     
     /* Account for bar if cell is in a region after it */
-    int cell_region = col / CELLS_PER_REGION_X;
+    cell_region = col / CELLS_PER_REGION_X;
     if (grid_config.bar_position >= 0 && cell_region > grid_config.bar_position) {
         x += BAR_WIDTH;
     }
@@ -215,6 +216,7 @@ void grid_draw_cell_outline(int col, int row, unsigned char color) {
 /* Fill a cell with color */
 void grid_draw_cell_filled(int col, int row, unsigned char color) {
     int x, y;
+    int cell_region;
     DisplayDriver *driver = display_get_driver();
     
     if (!driver) return;
@@ -222,7 +224,7 @@ void grid_draw_cell_filled(int col, int row, unsigned char color) {
     grid_cell_to_pixel(col, row, &x, &y);
     
     /* Account for bar if cell is in a region after it */
-    int cell_region = col / CELLS_PER_REGION_X;
+    cell_region = col / CELLS_PER_REGION_X;
     if (grid_config.bar_position >= 0 && cell_region > grid_config.bar_position) {
         x += BAR_WIDTH;
     }

@@ -20,7 +20,11 @@ void display_set_driver(DisplayDriver *driver) {
     
     if (active_display_driver) {
         serial_write_string("Display driver set: ");
-        serial_write_string(active_display_driver->name);
+        if (active_display_driver->name) {
+            serial_write_string(active_display_driver->name);
+        } else {
+            serial_write_string("(null name)");
+        }
         serial_write_string("\n");
         
         if (active_display_driver->init) {

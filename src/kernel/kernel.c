@@ -40,6 +40,7 @@
 #include "font_6x8.h"
 #include "dispi_cursor.h"
 #include "grid.h"
+#include "graphics_context.h"
 
 /* From graphics.c - VGA state functions */
 void save_vga_font(void);
@@ -2018,6 +2019,7 @@ void test_dispi_driver(void) {
     /* Graphics test state */
     int graphics_test_visible = 0;
     int grid_test_visible = 0;
+    int context_test_visible = 0;
     int last_hover_col = -1;  /* Track last highlighted cell */
     int last_hover_row = -1;
     
@@ -2031,6 +2033,11 @@ void test_dispi_driver(void) {
     
     /* Get the DISPI driver and set it as active */
     driver = dispi_get_driver();
+    serial_write_string("Got driver pointer: ");
+    serial_write_hex((unsigned int)driver);
+    serial_write_string(" with name ptr: ");
+    serial_write_hex((unsigned int)(driver ? driver->name : 0));
+    serial_write_string("\n");
     display_set_driver(driver);
     
     /* Enable double buffering for smooth rendering */
@@ -2198,9 +2205,10 @@ void test_dispi_driver(void) {
                                 /* Redraw grid lines around it */
                                 if (last_hover_col > 0 && last_hover_col % CELLS_PER_REGION_X != 0) {
                                     int x, y;
+                                    int cell_region;
                                     grid_cell_to_pixel(last_hover_col, last_hover_row, &x, &y);
                                     /* Adjust for bar */
-                                    int cell_region = last_hover_col / CELLS_PER_REGION_X;
+                                    cell_region = last_hover_col / CELLS_PER_REGION_X;
                                     if (grid_get_bar_position() >= 0 && cell_region > grid_get_bar_position()) {
                                         x += BAR_WIDTH;
                                     }
@@ -2208,9 +2216,10 @@ void test_dispi_driver(void) {
                                 }
                                 if (last_hover_row > 0 && last_hover_row % CELLS_PER_REGION_Y != 0) {
                                     int x, y;
+                                    int cell_region;
                                     grid_cell_to_pixel(last_hover_col, last_hover_row, &x, &y);
                                     /* Adjust for bar */
-                                    int cell_region = last_hover_col / CELLS_PER_REGION_X;
+                                    cell_region = last_hover_col / CELLS_PER_REGION_X;
                                     if (grid_get_bar_position() >= 0 && cell_region > grid_get_bar_position()) {
                                         x += BAR_WIDTH;
                                     }
@@ -2483,6 +2492,111 @@ void test_dispi_driver(void) {
                 dispi_draw_string(100, 375, "Gold ", 11, 255);
                 dispi_draw_string(135, 375, "Cyan ", 14, 255);
                 dispi_draw_string(170, 375, "White", 5, 255);
+            }
+            
+            /* Flip buffers to show changes */
+            if (dispi_is_double_buffered()) {
+                dispi_flip_buffers();
+            }
+            
+        } else if (key == 'C' || key == 'c') {
+            /* Toggle graphics context test */
+            context_test_visible = !context_test_visible;
+            
+            if (context_test_visible) {
+                /* Show graphics context test */
+                GraphicsContext *gc1, *gc2, *gc3;
+                Pattern8x8 checkerboard, stripes, dots;
+                DisplayDriver *driver = display_get_driver();
+                
+                /* Clear screen */
+                display_clear(0);  /* Black background */
+                
+                /* Create some patterns */
+                pattern_create_checkerboard(&checkerboard);
+                pattern_create_horizontal_stripes(&stripes, 2);
+                pattern_create_dots(&dots, 3);
+                
+                /* Test 1: Different clip regions with translation */
+                gc1 = gc_create(driver);
+                if (gc1) {
+                    /* Top-left quadrant with clipping */
+                    gc_set_clip(gc1, 50, 50, 200, 150);
+                    gc_set_colors(gc1, 14, 1); /* Bright cyan on blue */
+                    gc_set_translation(gc1, 10, 10);
+                    
+                    /* Draw title */
+                    dispi_draw_string_bios(50, 20, "Graphics Context Test - Press C to toggle", 11, 0);
+                    dispi_draw_string_bios(50, 40, "Clip Region 1 (top-left)", 14, 0);
+                    
+                    /* Draw some shapes that will be clipped */
+                    gc_fill_rect(gc1, 0, 0, 300, 200, gc1->fg_color);
+                    gc_draw_rect(gc1, 5, 5, 190, 140, 8); /* Red border */
+                    gc_draw_line(gc1, 0, 0, 200, 150, 15); /* White diagonal */
+                    gc_draw_circle(gc1, 100, 75, 50, 10); /* Gold circle */
+                    
+                    gc_destroy(gc1);
+                }
+                
+                /* Test 2: Pattern fills with different context */
+                gc2 = gc_create(driver);
+                if (gc2) {
+                    /* Top-right quadrant */
+                    gc_set_clip(gc2, 350, 50, 200, 150);
+                    gc_set_colors(gc2, 12, 4); /* Red on dark red */
+                    gc_set_translation(gc2, -300, 10);
+                    
+                    dispi_draw_string_bios(350, 40, "Pattern Fill Test", 12, 0);
+                    
+                    /* Test different patterns */
+                    gc_set_pattern(gc2, &checkerboard);
+                    gc_set_fill_mode(gc2, FILL_PATTERN);
+                    gc_fill_rect_current_pattern(gc2, 350, 0, 80, 60);
+                    
+                    gc_set_pattern(gc2, &stripes);
+                    gc_fill_rect_current_pattern(gc2, 430, 0, 80, 60);
+                    
+                    gc_set_pattern(gc2, &dots);
+                    gc_fill_rect_current_pattern(gc2, 390, 60, 80, 60);
+                    
+                    gc_destroy(gc2);
+                }
+                
+                /* Test 3: Multiple contexts on same region */
+                gc3 = gc_create(driver);
+                if (gc3) {
+                    /* Bottom area with multiple overlapping contexts */
+                    dispi_draw_string_bios(50, 220, "Overlapping Contexts", 10, 0);
+                    
+                    /* First context - large rectangle */
+                    gc_set_clip(gc3, 50, 250, 500, 150);
+                    gc_set_colors(gc3, 9, 0); /* Light blue */
+                    gc_fill_rect(gc3, 50, 250, 200, 100, gc3->fg_color);
+                    
+                    /* Change context properties and draw more */
+                    gc_set_clip(gc3, 150, 280, 300, 100);
+                    gc_set_colors(gc3, 13, 5); /* Magenta on dark magenta */
+                    gc_set_pattern(gc3, &checkerboard);
+                    gc_set_fill_mode(gc3, FILL_PATTERN);
+                    gc_fill_rect_current_pattern(gc3, 150, 280, 150, 80);
+                    
+                    /* Add some shapes with translation */
+                    gc_set_translation(gc3, 200, 50);
+                    gc_set_fill_mode(gc3, FILL_SOLID);
+                    gc_set_colors(gc3, 15, 0); /* White */
+                    gc_draw_circle(gc3, 50, 50, 30, gc3->fg_color);
+                    gc_fill_circle(gc3, 150, 50, 25, 6);
+                    
+                    gc_destroy(gc3);
+                }
+                
+                /* Show instructions */
+                dispi_draw_string_bios(50, 420, "Context features: clipping, translation, patterns", 7, 0);
+                dispi_draw_string_bios(50, 440, "Notice how shapes are clipped to their regions", 7, 0);
+            } else {
+                /* Clear context test */
+                display_clear(0);
+                dispi_draw_string_bios(50, 50, "Graphics Context Test Hidden", 5, 0);
             }
             
             /* Flip buffers to show changes */

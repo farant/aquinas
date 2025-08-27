@@ -220,7 +220,11 @@ static DisplayDriver dispi_driver = {
 
 /* Initialize driver */
 static void dispi_driver_init(void) {
+    serial_write_string("dispi_driver_init() called, calling dispi_init()\n");
     dispi_init();
+    serial_write_string("dispi_driver_init() done, dispi_available = ");
+    serial_write_hex(dispi_available);
+    serial_write_string("\n");
 }
 
 /* Shutdown driver */
@@ -360,6 +364,11 @@ static void dispi_driver_vsync(void) {
 
 /* Get the DISPI driver */
 DisplayDriver* dispi_get_driver(void) {
+    serial_write_string("dispi_get_driver returning driver at: ");
+    serial_write_hex((unsigned int)&dispi_driver);
+    serial_write_string(" with name: ");
+    serial_write_hex((unsigned int)dispi_driver.name);
+    serial_write_string("\n");
     return &dispi_driver;
 }
 

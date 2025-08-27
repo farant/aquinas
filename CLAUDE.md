@@ -63,7 +63,9 @@ The kernel has UART debug output via COM2 (0x2F8) that can be used for debugging
 ### Stuck at BIOS / Boot Loop / No Input / Blank Screen in Graphics Mode
 If the OS is stuck at BIOS, in a boot loop, input (keyboard/mouse) stops working, or graphics mode shows blank/incomplete display, **ALWAYS check that the bootloader is loading enough sectors for the kernel size**. 
 - Check kernel size in build output
-- Check boot.asm DAP structure: `dw 120` (120 sectors = 60KB)
-- Increase sector count if kernel has grown beyond current allocation
-- Current allocation: 120 sectors (60KB) - sufficient for current kernel size
+- Check boot.asm DAP structures: Two loads of 64 sectors each (total 128 sectors = 64KB)
+- Bootloader loads kernel in two parts due to real mode segment limitations:
+  - First 32KB (64 sectors) to 0x8000
+  - Next 32KB (64 sectors) to 0x10000
+- Current allocation: 128 sectors (64KB) - sufficient for current kernel size (~63KB)
 
