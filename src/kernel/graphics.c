@@ -232,6 +232,11 @@ void restore_dac_palette(void) {
     serial_write_string("Restored DAC palette with proper bright colors at 0x38-0x3F\n");
 }
 
+/* Get pointer to saved font data */
+unsigned char* get_saved_font(void) {
+    return saved_font;
+}
+
 /* Save VGA font from plane 2 */
 void save_vga_font(void) {
     unsigned char *vga_mem = (unsigned char *)0xA0000;

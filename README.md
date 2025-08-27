@@ -144,10 +144,33 @@ The system supports multiple graphics modes for visualization and demos:
 #### DISPI/VBE Mode (640×480, 256 colors)
 - **$dispi**: Launches DISPI graphics demo with text rendering
 - Linear framebuffer accessed via PCI detection
-- Text rendering with 6×8 pixel font
+- Text rendering with both 6×8 and 9×16 (BIOS) fonts
 - Interactive text input with blinking cursor
 - Full mouse support with arrow cursor
 - Smooth transition back to text mode
+
+Interactive test modes (press in DISPI mode):
+- **F**: Performance benchmark comparing regular vs optimized rectangle fills
+- **G**: Graphics primitives test (toggles display of lines, circles, BIOS font)
+- **R**: Grid system visualization (toggles grid overlay with mouse hover highlighting)
+
+Performance optimizations:
+- Double buffering for flicker-free rendering
+- Dirty rectangle tracking (only redraws changed regions)
+- 32-bit aligned memory operations for ~4x faster rectangle fills
+- Automatic merging of overlapping dirty regions
+
+Graphics primitives:
+- Line drawing using Bresenham's algorithm
+- Circle drawing using midpoint circle algorithm
+- BIOS 9×16 font rendering from saved VGA font data
+
+Grid system (foundation for UI):
+- 71×30 cell grid (9×16 pixels per cell, matching VGA text mode)
+- 7×6 region grid (90×80 pixels per region, 10×5 cells each)
+- Movable 10-pixel vertical bar between columns
+- Coordinate conversion between pixels, cells, and regions
+- Mouse hover cell highlighting in grid test mode
 
 Both graphics modes feature:
 - Real-time mouse cursor tracking
@@ -246,3 +269,6 @@ The navigation bar displays:
 - **Mouse protocol**: Microsoft 3-byte serial mouse packets
 - **Scancode mapping**: Direct PS/2 scancode to ASCII conversion
 - **Page storage**: Static array of 100 pages maximum
+- **Graphics drivers**: Abstracted display driver interface supporting both VGA and DISPI
+- **Memory management**: Bump allocator with ~300KB allocated for double buffering
+- **Bootloader**: Loads up to 120 sectors (60KB) of kernel code

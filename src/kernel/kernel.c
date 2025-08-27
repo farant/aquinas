@@ -39,6 +39,7 @@
 #include "display_driver.h"
 #include "font_6x8.h"
 #include "dispi_cursor.h"
+#include "grid.h"
 
 /* From graphics.c - VGA state functions */
 void save_vga_font(void);
@@ -2014,7 +2015,16 @@ void test_dispi_driver(void) {
     static unsigned char mouse_bytes[3];
     static int mouse_byte_num = 0;
     
+    /* Graphics test state */
+    int graphics_test_visible = 0;
+    int grid_test_visible = 0;
+    int last_hover_col = -1;  /* Track last highlighted cell */
+    int last_hover_row = -1;
+    
     serial_write_string("Starting DISPI driver demo\n");
+    
+    /* Initialize grid system */
+    grid_init();
     
     /* Save VGA font before switching to graphics mode */
     save_vga_font();
@@ -2081,7 +2091,7 @@ void test_dispi_driver(void) {
     dispi_draw_string(20, 10, "DISPI Graphics Demo with Optimized Rendering", 0, 255);
     
     /* Draw instructions */
-    dispi_draw_string(20, 25, "Type text below. Press ESC to exit. F = Fill test", 5, 255);
+    dispi_draw_string(20, 25, "ESC=exit, F=Fill, G=Graphics, R=Grid test", 5, 255);
     
     /* Draw text input area */
     display_fill_rect(20, 48, 600, 20, 0);  /* Black input area */
@@ -2174,6 +2184,55 @@ void test_dispi_driver(void) {
                     /* Update cursor position */
                     dispi_cursor_move(dispi_mouse_x, dispi_mouse_y);
                     
+                    /* If grid test is visible, highlight cell under mouse */
+                    if (grid_test_visible) {
+                        int hover_col, hover_row;
+                        grid_pixel_to_cell(dispi_mouse_x, dispi_mouse_y, &hover_col, &hover_row);
+                        
+                        /* Check if we moved to a different cell */
+                        if (hover_col != last_hover_col || hover_row != last_hover_row) {
+                            /* Restore previous cell if any */
+                            if (last_hover_col >= 0 && last_hover_row >= 0) {
+                                /* Redraw the cell area with black background */
+                                grid_draw_cell_filled(last_hover_col, last_hover_row, 0);
+                                /* Redraw grid lines around it */
+                                if (last_hover_col > 0 && last_hover_col % CELLS_PER_REGION_X != 0) {
+                                    int x, y;
+                                    grid_cell_to_pixel(last_hover_col, last_hover_row, &x, &y);
+                                    /* Adjust for bar */
+                                    int cell_region = last_hover_col / CELLS_PER_REGION_X;
+                                    if (grid_get_bar_position() >= 0 && cell_region > grid_get_bar_position()) {
+                                        x += BAR_WIDTH;
+                                    }
+                                    dispi_draw_line(x, y, x, y + CELL_HEIGHT - 1, 1);
+                                }
+                                if (last_hover_row > 0 && last_hover_row % CELLS_PER_REGION_Y != 0) {
+                                    int x, y;
+                                    grid_cell_to_pixel(last_hover_col, last_hover_row, &x, &y);
+                                    /* Adjust for bar */
+                                    int cell_region = last_hover_col / CELLS_PER_REGION_X;
+                                    if (grid_get_bar_position() >= 0 && cell_region > grid_get_bar_position()) {
+                                        x += BAR_WIDTH;
+                                    }
+                                    dispi_draw_line(x, y, x + CELL_WIDTH - 1, y, 1);
+                                }
+                            }
+                            
+                            /* Highlight new cell with dark red */
+                            if (hover_col >= 0 && hover_col < CELLS_PER_ROW && 
+                                hover_row >= 0 && hover_row < CELLS_PER_COL) {
+                                grid_draw_cell_filled(hover_col, hover_row, 6);  /* Dark red */
+                                last_hover_col = hover_col;
+                                last_hover_row = hover_row;
+                            }
+                            
+                            /* Flip buffers to show change */
+                            if (dispi_is_double_buffered()) {
+                                dispi_flip_buffers();
+                            }
+                        }
+                    }
+                    
                     mouse_byte_num = 0;
                 }
             }
@@ -2186,19 +2245,34 @@ void test_dispi_driver(void) {
             serial_write_string("ESC pressed, exiting DISPI demo\n");
         } else if (key == 8 && input_len > 0) {
             /* Backspace - erase last character */
+            /* First erase old cursor at current position */
+            display_fill_rect(cursor_x + 2, cursor_y + 6, 6, 2, 0);
+            
             input_len--;
             input_buffer[input_len] = '\0';
             cursor_x -= 6;
-            /* Erase character and cursor */
-            display_fill_rect(cursor_x + 2, cursor_y, 6, 8, 0);
+            
+            /* Erase the character and any cursor remnants */
+            display_fill_rect(cursor_x + 2, cursor_y, 6, 10, 0);  /* 8 for char + 2 for cursor underline */
+            
+            /* Reset cursor to visible state after moving */
+            cursor_visible = 1;
+            cursor_blink_time = current_time;
         } else if (key == 13) {
             /* Enter - clear input and move to new line */
+            /* First erase old cursor */
+            display_fill_rect(cursor_x + 2, cursor_y + 6, 6, 2, 0);
+            
             display_fill_rect(20, 48, 600, 20, 0);  /* Clear input area */
             cursor_x = 20;
             input_len = 0;
             for (i = 0; i < 80; i++) {
                 input_buffer[i] = '\0';
             }
+            
+            /* Reset cursor to visible state after clearing */
+            cursor_visible = 1;
+            cursor_blink_time = current_time;
         } else if (key == 'F' || key == 'f') {
             /* Fill test - compare regular vs optimized fills */
             unsigned int start_time, end_time;
@@ -2294,14 +2368,259 @@ void test_dispi_driver(void) {
                 dispi_draw_string(test_x + 66 + idx*6, test_y + 105, " ms", 5, 0);
             }
             
+        } else if (key == 'G' || key == 'g') {
+            /* Toggle graphics primitives test */
+            graphics_test_visible = !graphics_test_visible;
+            
+            if (graphics_test_visible) {
+                /* Show graphics test */
+                int test_x = 50, test_y = 50;
+                
+                /* Clear an area for our test */
+                display_fill_rect(test_x - 10, test_y - 10, 540, 380, 15);
+                
+                /* Test line drawing */
+                dispi_draw_string_bios(test_x, test_y, "Line Drawing Test:", 5, 255);
+                
+                /* Draw a box using lines */
+                dispi_draw_line(test_x, test_y + 25, test_x + 100, test_y + 25, 8);  /* Top - red */
+                dispi_draw_line(test_x + 100, test_y + 25, test_x + 100, test_y + 75, 10);  /* Right - gold */
+                dispi_draw_line(test_x + 100, test_y + 75, test_x, test_y + 75, 13);  /* Bottom - cyan */
+                dispi_draw_line(test_x, test_y + 75, test_x, test_y + 25, 14);  /* Left - bright cyan */
+                
+                /* Draw diagonal lines */
+                dispi_draw_line(test_x, test_y + 25, test_x + 100, test_y + 75, 6);  /* Diagonal \ - dark red */
+                dispi_draw_line(test_x, test_y + 75, test_x + 100, test_y + 25, 11);  /* Diagonal / - bright gold */
+                
+                /* Test circle drawing */
+                dispi_draw_string_bios(test_x + 150, test_y, "Circle Drawing Test:", 5, 255);
+                
+                /* Draw concentric circles */
+                dispi_draw_circle(test_x + 200, test_y + 50, 30, 12);  /* Dark cyan */
+                dispi_draw_circle(test_x + 200, test_y + 50, 20, 13);  /* Medium cyan */
+                dispi_draw_circle(test_x + 200, test_y + 50, 10, 14);  /* Bright cyan */
+                dispi_draw_circle(test_x + 200, test_y + 50, 5, 5);    /* White center */
+                
+                /* Test BIOS font with different colors */
+                dispi_draw_string_bios(test_x, test_y + 100, "BIOS 9x16 Font Test:", 5, 255);
+                dispi_draw_string_bios(test_x, test_y + 120, "The quick brown fox jumps over the lazy dog.", 11, 255);
+                dispi_draw_string_bios(test_x, test_y + 140, "AQUINAS OS - Text Editor Operating System", 8, 0);
+                dispi_draw_string_bios(test_x, test_y + 160, "0123456789 !@#$%^&*() []{}|\\;:'\",.<>?/", 10, 255);
+                
+                /* Draw some box drawing characters if available */
+                dispi_draw_string_bios(test_x, test_y + 190, "Box Drawing:", 5, 255);
+                {
+                    int i;
+                    unsigned char box_chars[] = {
+                        0xC9, 0xCD, 0xCD, 0xCD, 0xCD, 0xCB, 0xCD, 0xCD, 0xCD, 0xCD, 0xBB, 0,  /* Top border */
+                        0xBA, ' ', ' ', ' ', ' ', 0xBA, ' ', ' ', ' ', ' ', 0xBA, 0,           /* Middle */
+                        0xC8, 0xCD, 0xCD, 0xCD, 0xCD, 0xCA, 0xCD, 0xCD, 0xCD, 0xCD, 0xBC, 0    /* Bottom */
+                    };
+                    
+                    for (i = 0; box_chars[i]; i++) {
+                        if (box_chars[i] == 0) {
+                            test_y += 16;
+                            test_x = 50;
+                        } else {
+                            dispi_draw_char_bios(test_x + i * 9, test_y + 210, box_chars[i], 14, 255);
+                        }
+                    }
+                }
+                
+                /* Draw a pattern test */
+                dispi_draw_string_bios(test_x, test_y + 270, "Pattern Test with Lines:", 5, 255);
+                {
+                    int i;
+                    for (i = 0; i < 16; i++) {
+                        dispi_draw_line(test_x + i * 10, test_y + 290, 
+                                        test_x + i * 10, test_y + 330, i);
+                    }
+                }
+            } else {
+                /* Hide graphics test - first clear the entire area */
+                display_fill_rect(0, 48, 640, 400, 15);  /* Clear with background color */
+                
+                /* Redraw text input area */
+                display_fill_rect(20, 48, 600, 20, 0);  /* Black input area */
+                
+                /* Redraw input text and cursor if any */
+                if (input_len > 0) {
+                    int temp_x = 20;
+                    int j;
+                    for (j = 0; j < input_len; j++) {
+                        dispi_draw_char(temp_x + 2, 50, input_buffer[j], 11, 0);
+                        temp_x += 6;
+                    }
+                }
+                
+                /* Grayscale showcase */
+                display_fill_rect(20, 80, 60, 60, 0);   /* Black */
+                display_fill_rect(90, 80, 60, 60, 1);   /* Dark gray */
+                display_fill_rect(160, 80, 60, 60, 2);  /* Medium dark gray */
+                display_fill_rect(230, 80, 60, 60, 3);  /* Medium gray */
+                display_fill_rect(300, 80, 60, 60, 4);  /* Light gray */
+                display_fill_rect(370, 80, 60, 60, 5);  /* White */
+                
+                /* Red showcase */
+                display_fill_rect(20, 160, 100, 50, 6);   /* Dark red */
+                display_fill_rect(130, 160, 100, 50, 7);  /* Medium red */
+                display_fill_rect(240, 160, 100, 50, 8);  /* Bright red */
+                
+                /* Gold showcase */
+                display_fill_rect(20, 230, 100, 50, 9);   /* Dark gold */
+                display_fill_rect(130, 230, 100, 50, 10); /* Medium gold */
+                display_fill_rect(240, 230, 100, 50, 11); /* Bright yellow-gold */
+                
+                /* Cyan showcase */
+                display_fill_rect(20, 300, 100, 50, 12);  /* Dark cyan */
+                display_fill_rect(130, 300, 100, 50, 13); /* Medium cyan */
+                display_fill_rect(240, 300, 100, 50, 14); /* Bright cyan */
+                
+                /* Draw sample text */
+                dispi_draw_string(20, 365, "Sample Text: The quick brown fox jumps over the lazy dog.", 11, 0);
+                dispi_draw_string(20, 375, "Colors: ", 5, 255);
+                dispi_draw_string(70, 375, "Red ", 8, 255);
+                dispi_draw_string(100, 375, "Gold ", 11, 255);
+                dispi_draw_string(135, 375, "Cyan ", 14, 255);
+                dispi_draw_string(170, 375, "White", 5, 255);
+            }
+            
+            /* Flip buffers to show changes */
+            if (dispi_is_double_buffered()) {
+                dispi_flip_buffers();
+            }
+            
+        } else if (key == 'R' || key == 'r') {
+            /* Toggle grid visualization */
+            grid_test_visible = !grid_test_visible;
+            
+            if (grid_test_visible) {
+                /* Show grid */
+                /* First clear screen */
+                display_clear(0);  /* Black background */
+                
+                /* Draw grid lines */
+                grid_draw_grid_lines(1, 5);  /* Dark gray cells, white regions */
+                
+                /* Label some cells and regions */
+                dispi_draw_string_bios(5, 5, "Grid System Test", 11, 255);
+                dispi_draw_string_bios(5, 25, "Cells: 71x30 (9x16 px)", 14, 255);
+                dispi_draw_string_bios(5, 45, "Regions: 7x6 (90x80 px)", 10, 255);
+                
+                /* Highlight specific cells */
+                grid_draw_cell_outline(0, 0, 8);    /* Red - top-left cell */
+                grid_draw_cell_outline(70, 0, 8);   /* Red - top-right cell */
+                grid_draw_cell_outline(0, 29, 8);   /* Red - bottom-left cell */
+                grid_draw_cell_outline(70, 29, 8);  /* Red - bottom-right cell */
+                
+                /* Highlight specific regions */
+                grid_draw_region_outline(0, 0, 11);  /* Gold - top-left region */
+                grid_draw_region_outline(6, 0, 11);  /* Gold - top-right region */
+                grid_draw_region_outline(0, 5, 11);  /* Gold - bottom-left region */
+                grid_draw_region_outline(6, 5, 11);  /* Gold - bottom-right region */
+                
+                /* Show bar position (if set) */
+                {
+                    int bar_x, bar_y, bar_w, bar_h;
+                    char bar_info[40];
+                    grid_get_bar_rect(&bar_x, &bar_y, &bar_w, &bar_h);
+                    if (bar_x >= 0) {
+                        dispi_draw_string_bios(5, 65, "Bar at column 3 (10px wide)", 11, 255);
+                    }
+                }
+                
+                /* Draw some content in specific cells to show alignment */
+                {
+                    int x, y;
+                    /* Put characters at cell boundaries to verify alignment */
+                    grid_cell_to_pixel(10, 10, &x, &y);
+                    dispi_draw_char_bios(x, y, 'A', 14, 255);
+                    
+                    grid_cell_to_pixel(20, 10, &x, &y);
+                    dispi_draw_char_bios(x, y, 'B', 13, 255);
+                    
+                    grid_cell_to_pixel(30, 10, &x, &y);
+                    dispi_draw_char_bios(x, y, 'C', 12, 255);
+                }
+                
+                /* Test region coordinate conversion */
+                {
+                    int px, py;
+                    grid_region_to_pixel(3, 3, &px, &py);
+                    dispi_draw_string_bios(px + 5, py + 5, "Region 3,3", 5, 0);
+                }
+                
+            } else {
+                /* Hide grid - restore normal demo */
+                last_hover_col = -1;  /* Reset hover tracking */
+                last_hover_row = -1;
+                display_clear(15);  /* Medium gray background */
+                
+                /* Redraw title and instructions */
+                dispi_draw_string(20, 10, "DISPI Graphics Demo with Optimized Rendering", 0, 255);
+                dispi_draw_string(20, 25, "ESC=exit, F=Fill, G=Graphics, R=Grid test", 5, 255);
+                
+                /* Redraw text input area */
+                display_fill_rect(20, 48, 600, 20, 0);
+                
+                /* Redraw input text if any */
+                if (input_len > 0) {
+                    int temp_x = 20;
+                    int j;
+                    for (j = 0; j < input_len; j++) {
+                        dispi_draw_char(temp_x + 2, 50, input_buffer[j], 11, 0);
+                        temp_x += 6;
+                    }
+                }
+                
+                /* Redraw color showcases */
+                display_fill_rect(20, 80, 60, 60, 0);   /* Black */
+                display_fill_rect(90, 80, 60, 60, 1);   /* Dark gray */
+                display_fill_rect(160, 80, 60, 60, 2);  /* Medium dark gray */
+                display_fill_rect(230, 80, 60, 60, 3);  /* Medium gray */
+                display_fill_rect(300, 80, 60, 60, 4);  /* Light gray */
+                display_fill_rect(370, 80, 60, 60, 5);  /* White */
+                
+                display_fill_rect(20, 160, 100, 50, 6);   /* Dark red */
+                display_fill_rect(130, 160, 100, 50, 7);  /* Medium red */
+                display_fill_rect(240, 160, 100, 50, 8);  /* Bright red */
+                
+                display_fill_rect(20, 230, 100, 50, 9);   /* Dark gold */
+                display_fill_rect(130, 230, 100, 50, 10); /* Medium gold */
+                display_fill_rect(240, 230, 100, 50, 11); /* Bright yellow-gold */
+                
+                display_fill_rect(20, 300, 100, 50, 12);  /* Dark cyan */
+                display_fill_rect(130, 300, 100, 50, 13); /* Medium cyan */
+                display_fill_rect(240, 300, 100, 50, 14); /* Bright cyan */
+                
+                dispi_draw_string(20, 365, "Sample Text: The quick brown fox jumps over the lazy dog.", 11, 0);
+                dispi_draw_string(20, 375, "Colors: ", 5, 255);
+                dispi_draw_string(70, 375, "Red ", 8, 255);
+                dispi_draw_string(100, 375, "Gold ", 11, 255);
+                dispi_draw_string(135, 375, "Cyan ", 14, 255);
+                dispi_draw_string(170, 375, "White", 5, 255);
+            }
+            
+            /* Flip buffers */
+            if (dispi_is_double_buffered()) {
+                dispi_flip_buffers();
+            }
+            
         } else if (key > 31 && key < 127 && input_len < 79) {
             /* Regular printable character */
+            /* Erase old cursor before moving */
+            display_fill_rect(cursor_x + 2, cursor_y + 6, 6, 2, 0);
+            
             input_buffer[input_len] = (char)key;
             input_len++;
             
             /* Draw the character */
             dispi_draw_char(cursor_x + 2, cursor_y, (char)key, 11, 0);
             cursor_x += 6;
+            
+            /* Reset cursor to visible state after moving */
+            cursor_visible = 1;
+            cursor_blink_time = current_time;
         }
         
         /* Update cursor blinking */

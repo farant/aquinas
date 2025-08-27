@@ -14,6 +14,7 @@
 #include "serial.h"
 #include "pci.h"
 #include "memory.h"
+#include "graphics.h"
 
 /* Framebuffer information */
 static unsigned char* framebuffer = (unsigned char*)DISPI_LFB_PHYSICAL_ADDRESS;
@@ -596,5 +597,135 @@ void dispi_fill_rect_fast(int x, int y, int w, int h, unsigned char color) {
     /* Fill using optimized horizontal lines */
     for (row = 0; row < h; row++) {
         dispi_hline_fast(x, y + row, w, color);
+    }
+}
+
+/* Helper: absolute value */
+static int abs(int n) {
+    return n < 0 ? -n : n;
+}
+
+/* Draw a line using Bresenham's algorithm */
+void dispi_draw_line(int x0, int y0, int x1, int y1, unsigned char color) {
+    int dx = abs(x1 - x0);
+    int dy = abs(y1 - y0);
+    int sx = (x0 < x1) ? 1 : -1;
+    int sy = (y0 < y1) ? 1 : -1;
+    int err = dx - dy;
+    int e2;
+    
+    while (1) {
+        dispi_driver_set_pixel(x0, y0, color);
+        
+        if (x0 == x1 && y0 == y1) break;
+        
+        e2 = 2 * err;
+        if (e2 > -dy) {
+            err -= dy;
+            x0 += sx;
+        }
+        if (e2 < dx) {
+            err += dx;
+            y0 += sy;
+        }
+    }
+    
+    /* Mark the line's bounding box as dirty */
+    if (double_buffered) {
+        int min_x = x0 < x1 ? x0 : x1;
+        int min_y = y0 < y1 ? y0 : y1;
+        int max_x = x0 > x1 ? x0 : x1;
+        int max_y = y0 > y1 ? y0 : y1;
+        dispi_mark_dirty(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1);
+    }
+}
+
+/* Draw a circle using midpoint circle algorithm */
+void dispi_draw_circle(int cx, int cy, int radius, unsigned char color) {
+    int x = 0;
+    int y = radius;
+    int d = 3 - 2 * radius;
+    
+    while (x <= y) {
+        /* Draw 8 octants */
+        dispi_driver_set_pixel(cx + x, cy + y, color);
+        dispi_driver_set_pixel(cx - x, cy + y, color);
+        dispi_driver_set_pixel(cx + x, cy - y, color);
+        dispi_driver_set_pixel(cx - x, cy - y, color);
+        dispi_driver_set_pixel(cx + y, cy + x, color);
+        dispi_driver_set_pixel(cx - y, cy + x, color);
+        dispi_driver_set_pixel(cx + y, cy - x, color);
+        dispi_driver_set_pixel(cx - y, cy - x, color);
+        
+        if (d < 0) {
+            d = d + 4 * x + 6;
+        } else {
+            d = d + 4 * (x - y) + 10;
+            y--;
+        }
+        x++;
+    }
+    
+    /* Mark the circle's bounding box as dirty */
+    if (double_buffered) {
+        dispi_mark_dirty(cx - radius, cy - radius, radius * 2 + 1, radius * 2 + 1);
+    }
+}
+
+/* Draw character using saved VGA font (9x16) */
+void dispi_draw_char_bios(int x, int y, unsigned char c, unsigned char fg_color, unsigned char bg_color) {
+    unsigned char *font_base = get_saved_font();
+    unsigned char *char_data;
+    int row, col;
+    unsigned char byte;
+    
+    if (font_base == NULL) {
+        serial_write_string("WARNING: No saved font available for BIOS font rendering\n");
+        return;
+    }
+    
+    /* In VGA, each character is 32 bytes (16 rows, with padding) */
+    char_data = font_base + (c * 32);
+    
+    /* Draw character */
+    for (row = 0; row < 16; row++) {
+        byte = char_data[row];
+        for (col = 0; col < 8; col++) {
+            if (byte & (0x80 >> col)) {
+                dispi_driver_set_pixel(x + col, y + row, fg_color);
+            } else if (bg_color != 255) {  /* 255 = transparent background */
+                dispi_driver_set_pixel(x + col, y + row, bg_color);
+            }
+        }
+        /* 9th column is always background (for spacing) */
+        if (bg_color != 255) {
+            dispi_driver_set_pixel(x + 8, y + row, bg_color);
+        }
+    }
+    
+    /* Mark character area as dirty */
+    if (double_buffered) {
+        dispi_mark_dirty(x, y, 9, 16);
+    }
+}
+
+/* Draw a string using BIOS font */
+void dispi_draw_string_bios(int x, int y, const char *str, unsigned char fg_color, unsigned char bg_color) {
+    int start_x = x;
+    
+    while (*str) {
+        if (*str == '\n') {
+            x = start_x;
+            y += 16;  /* Move to next line */
+        } else if (*str == '\t') {
+            /* Align to next tab stop (every 8 characters) */
+            int chars_from_start = (x - start_x) / 9;
+            int next_tab = ((chars_from_start / 8) + 1) * 8;
+            x = start_x + (next_tab * 9);
+        } else {
+            dispi_draw_char_bios(x, y, (unsigned char)*str, fg_color, bg_color);
+            x += 9;  /* Character width including spacing */
+        }
+        str++;
     }
 }

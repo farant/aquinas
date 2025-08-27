@@ -55,4 +55,7 @@ void handle_graphics_mouse_raw(signed char dx, signed char dy);
 /* Graphics mode state */
 extern int graphics_mode_active;
 
+/* Access to saved VGA font */
+extern unsigned char* get_saved_font(void);
+
 #endif

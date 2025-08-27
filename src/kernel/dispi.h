@@ -81,6 +81,14 @@ void dispi_flip_dirty_rects(void);
 void dispi_fill_rect_fast(int x, int y, int w, int h, unsigned char color);
 void dispi_hline_fast(int x, int y, int width, unsigned char color);
 
+/* Graphics primitives */
+void dispi_draw_line(int x0, int y0, int x1, int y1, unsigned char color);
+void dispi_draw_circle(int cx, int cy, int radius, unsigned char color);
+
+/* BIOS font support (9x16) */
+void dispi_draw_char_bios(int x, int y, unsigned char c, unsigned char fg_color, unsigned char bg_color);
+void dispi_draw_string_bios(int x, int y, const char *str, unsigned char fg_color, unsigned char bg_color);
+
 /* Get the display driver for DISPI */
 struct DisplayDriver* dispi_get_driver(void);
 
