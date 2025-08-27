@@ -38,6 +38,7 @@
 #include "dispi.h"
 #include "display_driver.h"
 #include "font_6x8.h"
+#include "dispi_cursor.h"
 
 /* From graphics.c - VGA state functions */
 void save_vga_font(void);
@@ -2007,6 +2008,12 @@ void test_dispi_driver(void) {
     char input_buffer[80];
     int input_len = 0;
     
+    /* Mouse state for DISPI mode */
+    static int dispi_mouse_x = 320;
+    static int dispi_mouse_y = 240;
+    static unsigned char mouse_bytes[3];
+    static int mouse_byte_num = 0;
+    
     serial_write_string("Starting DISPI driver demo\n");
     
     /* Save VGA font before switching to graphics mode */
@@ -2109,10 +2116,54 @@ void test_dispi_driver(void) {
     cursor_blink_time = get_ticks();
     display_fill_rect(cursor_x + 2, cursor_y + 6, 6, 2, 11);  /* Yellow underline cursor */
     
-    serial_write_string("DISPI demo displayed. Press ESC to exit.\n");
+    /* Initialize and show mouse cursor */
+    dispi_cursor_init();
+    dispi_cursor_show();
+    
+    serial_write_string("DISPI demo displayed. Mouse cursor active. Press ESC to exit.\n");
     
     /* Main loop */
     while (running) {
+        /* Check for mouse input on COM1 */
+        if (inb(0x3FD) & 0x01) {
+            unsigned char data = inb(0x3F8);
+            signed char dx, dy;
+            
+            /* Microsoft Serial Mouse protocol parsing */
+            if (data & 0x40) {
+                /* Start of packet (bit 6 set) */
+                mouse_bytes[0] = data;
+                mouse_byte_num = 1;
+            } else if (mouse_byte_num > 0) {
+                mouse_bytes[mouse_byte_num++] = data;
+                
+                if (mouse_byte_num == 3) {
+                    /* Complete packet received */
+                    dx = ((mouse_bytes[0] & 0x03) << 6) | (mouse_bytes[1] & 0x3F);
+                    dy = ((mouse_bytes[0] & 0x0C) << 4) | (mouse_bytes[2] & 0x3F);
+                    
+                    /* Sign extend */
+                    if (dx & 0x80) dx |= 0xFFFFFF00;
+                    if (dy & 0x80) dy |= 0xFFFFFF00;
+                    
+                    /* Update mouse position (2x speed) */
+                    dispi_mouse_x += dx * 2;
+                    dispi_mouse_y += dy * 2;  /* Don't invert Y */
+                    
+                    /* Clamp to screen bounds */
+                    if (dispi_mouse_x < 0) dispi_mouse_x = 0;
+                    if (dispi_mouse_x >= 640) dispi_mouse_x = 639;
+                    if (dispi_mouse_y < 0) dispi_mouse_y = 0;
+                    if (dispi_mouse_y >= 480) dispi_mouse_y = 479;
+                    
+                    /* Update cursor position */
+                    dispi_cursor_move(dispi_mouse_x, dispi_mouse_y);
+                    
+                    mouse_byte_num = 0;
+                }
+            }
+        }
+        
         /* Check for keyboard input using keyboard_check */
         key = keyboard_check();
         if (key == 27) { /* ESC - ASCII value */
@@ -2162,6 +2213,9 @@ void test_dispi_driver(void) {
     
     /* Return to text mode - save font, disable DISPI, restore VGA state */
     serial_write_string("Disabling DISPI and returning to text mode...\n");
+    
+    /* Hide mouse cursor before switching modes */
+    dispi_cursor_hide();
     
     /* Disable DISPI first */
     dispi_disable();
