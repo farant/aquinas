@@ -94,6 +94,32 @@ This file contains suggestions for improvements and enhancements noticed while w
 
 ---
 
+### 7. Centralized Mouse Handling System
+**Description:** Refactor mouse handling into a centralized driver instead of duplicating protocol parsing in each demo.
+
+**Why beneficial:**
+- Eliminates code duplication between layout_demo.c and dispi_demo.c
+- Provides consistent event generation (MOUSE_DOWN, MOUSE_UP, MOUSE_MOVE)
+- Clearer coordinate system management
+- Single source of truth for mouse state
+- Simpler integration for new UI components
+
+**Implementation approach:**
+- Create mouse.c/h with centralized MouseState structure
+- Implement mouse_poll() to handle serial protocol parsing
+- Generate proper mouse events with state change detection
+- Fix coordinate confusion between pixels and regions in view/layout
+- Unify cursor rendering through mouse_cursor module
+- Register event callbacks instead of inline protocol handling
+
+**Key improvements:**
+- Proper button state tracking (current vs previous)
+- Automatic MOUSE_UP event generation
+- MOUSE_MOVE events for hover effects
+- Clear separation of driver logic from application code
+
+---
+
 ## Notes
 
 These suggestions are based on patterns observed in the code and potential improvements that would enhance the system while maintaining its simplicity and design philosophy.

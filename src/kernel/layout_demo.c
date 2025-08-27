@@ -18,7 +18,7 @@
 #include "vga.h"
 #include "graphics.h"
 #include "memory.h"
-#include "io.h"
+#include "mouse.h"
 
 /* Demo view types */
 typedef struct {
@@ -344,6 +344,28 @@ static TextView* create_text_view(int x, int y, int w, int h, const char *text) 
     return tv;
 }
 
+/* Global state for mouse handler */
+static Layout *g_layout_demo_layout = NULL;
+static int g_layout_demo_needs_redraw = 0;
+
+/* Mouse event handler for layout demo */
+static void layout_demo_mouse_handler(InputEvent *event) {
+    if (!event || !g_layout_demo_layout) return;
+    
+    /* Update cursor position on any mouse event */
+    if (event->type == EVENT_MOUSE_MOVE || 
+        event->type == EVENT_MOUSE_DOWN || 
+        event->type == EVENT_MOUSE_UP) {
+        dispi_cursor_move(event->data.mouse.x, event->data.mouse.y);
+        g_layout_demo_needs_redraw = 1;  /* Force redraw to show cursor movement */
+    }
+    
+    /* Pass event to layout for handling */
+    if (layout_handle_event(g_layout_demo_layout, event)) {
+        g_layout_demo_needs_redraw = 1;
+    }
+}
+
 /* Main layout demo function */
 void test_layout_demo(void) {
     Layout *layout;
@@ -415,6 +437,10 @@ void test_layout_demo(void) {
         driver->set_palette(aquinas_palette);
     }
     
+    /* Initialize mouse system */
+    mouse_init(320, 240);
+    mouse_set_callback(layout_demo_mouse_handler);
+    
     /* Initialize mouse cursor for DISPI mode */
     dispi_cursor_init();
     dispi_cursor_show();
@@ -466,6 +492,10 @@ void test_layout_demo(void) {
     /* Set active region */
     layout_set_active_region(layout, layout_get_region(layout, 0, 0));
     
+    /* Store layout for mouse handler */
+    g_layout_demo_layout = layout;
+    g_layout_demo_needs_redraw = 0;
+    
     /* Initial draw */
     layout_draw(layout, gc);
     if (dispi_is_double_buffered()) {
@@ -484,10 +514,6 @@ void test_layout_demo(void) {
     while (running) {
         unsigned int current_time = get_ticks();
         int delta_ms = current_time - last_update;
-        static int mouse_x = 320, mouse_y = 240;
-        static unsigned char mouse_bytes[3];
-        static int mouse_byte_num = 0;
-        int need_redraw = 0;
         
         /* Update views */
         if (delta_ms > 16) {  /* ~60 FPS */
@@ -495,69 +521,12 @@ void test_layout_demo(void) {
             last_update = current_time;
             /* Check if any views need redrawing */
             if (layout->root_view && layout->root_view->needs_redraw) {
-                need_redraw = 1;
+                g_layout_demo_needs_redraw = 1;
             }
         }
         
-        /* Check for mouse input on COM1 */
-        if (inb(0x3FD) & 0x01) {
-            unsigned char data = inb(0x3F8);
-            signed char dx, dy;
-            
-            /* Microsoft Serial Mouse protocol parsing */
-            if (data & 0x40) {
-                /* Start of packet (bit 6 set) */
-                mouse_bytes[0] = data;
-                mouse_byte_num = 1;
-            } else if (mouse_byte_num > 0) {
-                mouse_bytes[mouse_byte_num++] = data;
-                
-                if (mouse_byte_num == 3) {
-                    /* Complete packet received */
-                    dx = ((mouse_bytes[0] & 0x03) << 6) | (mouse_bytes[1] & 0x3F);
-                    dy = ((mouse_bytes[0] & 0x0C) << 4) | (mouse_bytes[2] & 0x3F);
-                    
-                    /* Sign extend */
-                    if (dx & 0x80) dx |= 0xFFFFFF00;
-                    if (dy & 0x80) dy |= 0xFFFFFF00;
-                    
-                    /* Check if mouse actually moved */
-                    if (dx != 0 || dy != 0) {
-                        /* Update mouse position (2x speed) */
-                        mouse_x += dx * 2;
-                        mouse_y += dy * 2;  /* Don't invert Y */
-                        
-                        /* Clamp to screen bounds */
-                        if (mouse_x < 0) mouse_x = 0;
-                        if (mouse_x >= 640) mouse_x = 639;
-                        if (mouse_y < 0) mouse_y = 0;
-                        if (mouse_y >= 480) mouse_y = 479;
-                        
-                        /* Update cursor position - this redraws it at new location */
-                        dispi_cursor_move(mouse_x, mouse_y);
-                        
-                        /* Force a redraw so cursor movement is visible */
-                        need_redraw = 1;
-                    }
-                    
-                    /* Handle mouse clicks */
-                    /* Left button is bit 5, right button is bit 4 */
-                    if (mouse_bytes[0] & 0x20) {  /* Left button */
-                        InputEvent event;
-                        event.type = EVENT_MOUSE_DOWN;
-                        event.data.mouse.x = mouse_x;
-                        event.data.mouse.y = mouse_y;
-                        event.data.mouse.button = 1;
-                        if (layout_handle_event(layout, &event)) {
-                            /* Event was handled, need redraw */
-                            need_redraw = 1;
-                        }
-                    }
-                    
-                    mouse_byte_num = 0;
-                }
-            }
-        }
+        /* Poll mouse for input */
+        mouse_poll();
         
         /* Check for keyboard input */
         key = keyboard_check();
@@ -569,17 +538,17 @@ void test_layout_demo(void) {
             serial_write_string("Switching to single layout\n");
             content = create_text_view(0, 0, 7, 6, "Full screen text view");
             layout_set_single(layout, (View*)content);
-            need_redraw = 1;
+            g_layout_demo_needs_redraw = 1;
         } else if (key == '2') {
             /* Demo: Switch back to split */
             serial_write_string("Switching back to split layout\n");
             layout_set_region_content(layout, 0, 0, 2, 6, (View*)navigator);
             layout_set_region_content(layout, 2, 0, 5, 6, (View*)view1);
-            need_redraw = 1;
+            g_layout_demo_needs_redraw = 1;
         } else if (key == -3 || key == -4) {  /* Left/Right arrows */
             /* Move focus between regions */
             layout_move_focus(layout, (key == -3) ? 3 : 1);  /* 3=left, 1=right */
-            need_redraw = 1;
+            g_layout_demo_needs_redraw = 1;
         } else if (key > 0) {
             /* Send key event to focused view */
             InputEvent event;
@@ -587,12 +556,12 @@ void test_layout_demo(void) {
             event.data.keyboard.key = key;
             event.data.keyboard.ascii = (char)key;
             if (layout_handle_event(layout, &event)) {
-                need_redraw = 1;
+                g_layout_demo_needs_redraw = 1;
             }
         }
         
         /* Redraw if needed */
-        if (need_redraw || (layout && layout->needs_redraw) || 
+        if (g_layout_demo_needs_redraw || (layout && layout->needs_redraw) || 
             (layout->root_view && layout->root_view->needs_redraw)) {
             /* Draw the layout */
             layout_draw(layout, gc);
@@ -606,7 +575,7 @@ void test_layout_demo(void) {
             /* Even if double buffering failed, still try to flip */
             dispi_flip_buffers();
             
-            need_redraw = 0;  /* Clear the flag */
+            g_layout_demo_needs_redraw = 0;  /* Clear the flag */
         }
     }
     

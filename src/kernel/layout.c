@@ -527,16 +527,16 @@ int layout_handle_event(Layout *layout, InputEvent *event) {
         /* Use view hit testing to find the deepest view at this position */
         /* This will properly handle child views */
         if (layout->root_view) {
-            /* Convert pixel to region coordinates for hit test */
-            int reg_x, reg_y;
-            layout_pixels_to_region(layout, event->data.mouse.x, event->data.mouse.y, &reg_x, &reg_y);
-            
-            /* Hit test needs region coordinates, not pixels */
-            target_view = view_hit_test(layout->root_view, reg_x, reg_y);
+            /* Use pixel-based hit test directly */
+            target_view = view_hit_test_pixels(layout->root_view, 
+                                              event->data.mouse.x, 
+                                              event->data.mouse.y);
             
             /* If we found a view and it's a click, update active region */
             if (target_view && event->type == EVENT_MOUSE_DOWN) {
                 /* Find which region contains this view for active highlight */
+                int reg_x, reg_y;
+                layout_pixels_to_region(layout, event->data.mouse.x, event->data.mouse.y, &reg_x, &reg_y);
                 region = layout_get_region(layout, reg_x, reg_y);
                 if (region) {
                     layout_set_active_region(layout, region);

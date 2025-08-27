@@ -87,7 +87,8 @@ void view_draw(View *view, GraphicsContext *gc);
 void view_update_tree(View *root, int delta_ms);
 
 /* Hit testing and event handling */
-View* view_hit_test(View *root, int x, int y);
+View* view_hit_test(View *root, int x, int y);  /* Region coordinates */
+View* view_hit_test_pixels(View *root, int pixel_x, int pixel_y);  /* Pixel coordinates */
 int view_handle_event(View *view, InputEvent *event);
 void view_broadcast_event(View *root, InputEvent *event);
 

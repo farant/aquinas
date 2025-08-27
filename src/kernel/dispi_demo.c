@@ -25,6 +25,8 @@
 #include "graphics_context.h"
 #include "dispi_demo.h"
 #include "input.h"
+#include "mouse.h"
+#include "view.h"  /* For InputEvent */
 
 /* From graphics.c - VGA state functions */
 void save_vga_font(void);
@@ -48,6 +50,74 @@ static void draw_dispi_circle(int cx, int cy, int r, unsigned char color) {
     }
 }
 
+/* Global state for mouse handler */
+static int g_dispi_grid_test_visible = 0;
+static int g_dispi_last_hover_col = -1;
+static int g_dispi_last_hover_row = -1;
+
+/* Mouse event handler for DISPI demo */
+static void dispi_demo_mouse_handler(InputEvent *event) {
+    if (!event) return;
+    
+    /* Update cursor position on any mouse event */
+    if (event->type == EVENT_MOUSE_MOVE || 
+        event->type == EVENT_MOUSE_DOWN || 
+        event->type == EVENT_MOUSE_UP) {
+        dispi_cursor_move(event->data.mouse.x, event->data.mouse.y);
+    }
+    
+    /* If grid test is visible, highlight cell under mouse */
+    if (g_dispi_grid_test_visible && event->type == EVENT_MOUSE_MOVE) {
+        int hover_col, hover_row;
+        grid_pixel_to_cell(event->data.mouse.x, event->data.mouse.y, &hover_col, &hover_row);
+        
+        /* Check if we moved to a different cell */
+        if (hover_col != g_dispi_last_hover_col || hover_row != g_dispi_last_hover_row) {
+            /* Restore previous cell if any */
+            if (g_dispi_last_hover_col >= 0 && g_dispi_last_hover_row >= 0) {
+                /* Redraw the cell area with black background */
+                grid_draw_cell_filled(g_dispi_last_hover_col, g_dispi_last_hover_row, 0);
+                /* Redraw grid lines around it */
+                if (g_dispi_last_hover_col > 0 && g_dispi_last_hover_col % CELLS_PER_REGION_X != 0) {
+                    int x, y;
+                    int cell_region;
+                    grid_cell_to_pixel(g_dispi_last_hover_col, g_dispi_last_hover_row, &x, &y);
+                    /* Adjust for bar */
+                    cell_region = g_dispi_last_hover_col / CELLS_PER_REGION_X;
+                    if (grid_get_bar_position() >= 0 && cell_region > grid_get_bar_position()) {
+                        x += BAR_WIDTH;
+                    }
+                    dispi_draw_line(x, y, x, y + CELL_HEIGHT - 1, 1);
+                }
+                if (g_dispi_last_hover_row > 0 && g_dispi_last_hover_row % CELLS_PER_REGION_Y != 0) {
+                    int x, y;
+                    int cell_region;
+                    grid_cell_to_pixel(g_dispi_last_hover_col, g_dispi_last_hover_row, &x, &y);
+                    /* Adjust for bar */
+                    cell_region = g_dispi_last_hover_col / CELLS_PER_REGION_X;
+                    if (grid_get_bar_position() >= 0 && cell_region > grid_get_bar_position()) {
+                        x += BAR_WIDTH;
+                    }
+                    dispi_draw_line(x, y, x + CELL_WIDTH - 1, y, 1);
+                }
+            }
+            
+            /* Highlight new cell with dark red */
+            if (hover_col >= 0 && hover_col < CELLS_PER_ROW && 
+                hover_row >= 0 && hover_row < CELLS_PER_COL) {
+                grid_draw_cell_filled(hover_col, hover_row, 6);  /* Dark red */
+                g_dispi_last_hover_col = hover_col;
+                g_dispi_last_hover_row = hover_row;
+            }
+            
+            /* Flip buffers to show change */
+            if (dispi_is_double_buffered()) {
+                dispi_flip_buffers();
+            }
+        }
+    }
+}
+
 /* Test DISPI driver - recreate graphics demo using new display driver interface */
 void test_dispi_driver(void) {
     DisplayDriver *driver;
@@ -62,18 +132,9 @@ void test_dispi_driver(void) {
     char input_buffer[80];
     int input_len = 0;
     
-    /* Mouse state for DISPI mode */
-    static int dispi_mouse_x = 320;
-    static int dispi_mouse_y = 240;
-    static unsigned char mouse_bytes[3];
-    static int mouse_byte_num = 0;
-    
     /* Graphics test state */
     int graphics_test_visible = 0;
-    int grid_test_visible = 0;
     int context_test_visible = 0;
-    int last_hover_col = -1;  /* Track last highlighted cell */
-    int last_hover_row = -1;
     
     serial_write_string("Starting DISPI driver demo\n");
     
@@ -196,6 +257,10 @@ void test_dispi_driver(void) {
     cursor_blink_time = get_ticks();
     display_fill_rect(cursor_x + 2, cursor_y + 6, 6, 2, 11);  /* Yellow underline cursor */
     
+    /* Initialize mouse system */
+    mouse_init(320, 240);
+    mouse_set_callback(dispi_demo_mouse_handler);
+    
     /* Initialize and show mouse cursor */
     dispi_cursor_init();
     dispi_cursor_show();
@@ -209,96 +274,8 @@ void test_dispi_driver(void) {
     
     /* Main loop */
     while (running) {
-        /* Check for mouse input on COM1 */
-        if (inb(0x3FD) & 0x01) {
-            unsigned char data = inb(0x3F8);
-            signed char dx, dy;
-            
-            /* Microsoft Serial Mouse protocol parsing */
-            if (data & 0x40) {
-                /* Start of packet (bit 6 set) */
-                mouse_bytes[0] = data;
-                mouse_byte_num = 1;
-            } else if (mouse_byte_num > 0) {
-                mouse_bytes[mouse_byte_num++] = data;
-                
-                if (mouse_byte_num == 3) {
-                    /* Complete packet received */
-                    dx = ((mouse_bytes[0] & 0x03) << 6) | (mouse_bytes[1] & 0x3F);
-                    dy = ((mouse_bytes[0] & 0x0C) << 4) | (mouse_bytes[2] & 0x3F);
-                    
-                    /* Sign extend */
-                    if (dx & 0x80) dx |= 0xFFFFFF00;
-                    if (dy & 0x80) dy |= 0xFFFFFF00;
-                    
-                    /* Update mouse position (2x speed) */
-                    dispi_mouse_x += dx * 2;
-                    dispi_mouse_y += dy * 2;  /* Don't invert Y */
-                    
-                    /* Clamp to screen bounds */
-                    if (dispi_mouse_x < 0) dispi_mouse_x = 0;
-                    if (dispi_mouse_x >= 640) dispi_mouse_x = 639;
-                    if (dispi_mouse_y < 0) dispi_mouse_y = 0;
-                    if (dispi_mouse_y >= 480) dispi_mouse_y = 479;
-                    
-                    /* Update cursor position */
-                    dispi_cursor_move(dispi_mouse_x, dispi_mouse_y);
-                    
-                    /* If grid test is visible, highlight cell under mouse */
-                    if (grid_test_visible) {
-                        int hover_col, hover_row;
-                        grid_pixel_to_cell(dispi_mouse_x, dispi_mouse_y, &hover_col, &hover_row);
-                        
-                        /* Check if we moved to a different cell */
-                        if (hover_col != last_hover_col || hover_row != last_hover_row) {
-                            /* Restore previous cell if any */
-                            if (last_hover_col >= 0 && last_hover_row >= 0) {
-                                /* Redraw the cell area with black background */
-                                grid_draw_cell_filled(last_hover_col, last_hover_row, 0);
-                                /* Redraw grid lines around it */
-                                if (last_hover_col > 0 && last_hover_col % CELLS_PER_REGION_X != 0) {
-                                    int x, y;
-                                    int cell_region;
-                                    grid_cell_to_pixel(last_hover_col, last_hover_row, &x, &y);
-                                    /* Adjust for bar */
-                                    cell_region = last_hover_col / CELLS_PER_REGION_X;
-                                    if (grid_get_bar_position() >= 0 && cell_region > grid_get_bar_position()) {
-                                        x += BAR_WIDTH;
-                                    }
-                                    dispi_draw_line(x, y, x, y + CELL_HEIGHT - 1, 1);
-                                }
-                                if (last_hover_row > 0 && last_hover_row % CELLS_PER_REGION_Y != 0) {
-                                    int x, y;
-                                    int cell_region;
-                                    grid_cell_to_pixel(last_hover_col, last_hover_row, &x, &y);
-                                    /* Adjust for bar */
-                                    cell_region = last_hover_col / CELLS_PER_REGION_X;
-                                    if (grid_get_bar_position() >= 0 && cell_region > grid_get_bar_position()) {
-                                        x += BAR_WIDTH;
-                                    }
-                                    dispi_draw_line(x, y, x + CELL_WIDTH - 1, y, 1);
-                                }
-                            }
-                            
-                            /* Highlight new cell with dark red */
-                            if (hover_col >= 0 && hover_col < CELLS_PER_ROW && 
-                                hover_row >= 0 && hover_row < CELLS_PER_COL) {
-                                grid_draw_cell_filled(hover_col, hover_row, 6);  /* Dark red */
-                                last_hover_col = hover_col;
-                                last_hover_row = hover_row;
-                            }
-                            
-                            /* Flip buffers to show change */
-                            if (dispi_is_double_buffered()) {
-                                dispi_flip_buffers();
-                            }
-                        }
-                    }
-                    
-                    mouse_byte_num = 0;
-                }
-            }
-        }
+        /* Poll mouse for input */
+        mouse_poll();
         
         /* Check for keyboard input using keyboard_check */
         key = keyboard_check();
@@ -659,9 +636,9 @@ void test_dispi_driver(void) {
             
         } else if (key == 'R' || key == 'r') {
             /* Toggle grid visualization */
-            grid_test_visible = !grid_test_visible;
+            g_dispi_grid_test_visible = !g_dispi_grid_test_visible;
             
-            if (grid_test_visible) {
+            if (g_dispi_grid_test_visible) {
                 /* Show grid */
                 /* First clear screen */
                 display_clear(0);  /* Black background */
@@ -719,8 +696,8 @@ void test_dispi_driver(void) {
                 
             } else {
                 /* Hide grid - restore normal demo */
-                last_hover_col = -1;  /* Reset hover tracking */
-                last_hover_row = -1;
+                g_dispi_last_hover_col = -1;  /* Reset hover tracking */
+                g_dispi_last_hover_row = -1;
                 display_clear(15);  /* Medium gray background */
                 
                 /* Redraw title and instructions */

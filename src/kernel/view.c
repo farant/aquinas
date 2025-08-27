@@ -343,14 +343,14 @@ void view_update_tree(View *root, int delta_ms) {
     }
 }
 
-/* Find view at screen coordinates */
+/* Find view at region coordinates */
 View* view_hit_test(View *root, int x, int y) {
     View *child, *hit;
     RegionRect abs_bounds;
     
     if (!root || !root->visible) return NULL;
     
-    /* Check if point is within this view */
+    /* Check if point is within this view (region coordinates) */
     view_get_absolute_bounds(root, &abs_bounds);
     if (x < abs_bounds.x || x >= abs_bounds.x + abs_bounds.width ||
         y < abs_bounds.y || y >= abs_bounds.y + abs_bounds.height) {
@@ -363,6 +363,38 @@ View* view_hit_test(View *root, int x, int y) {
     child = root->children;
     while (child) {
         hit = view_hit_test(child, x, y);
+        if (hit) return hit;
+        child = child->next_sibling;
+    }
+    
+    /* If no child hit, return this view */
+    return root;
+}
+
+/* Find view at pixel coordinates */
+View* view_hit_test_pixels(View *root, int pixel_x, int pixel_y) {
+    View *child, *hit;
+    RegionRect abs_bounds;
+    int view_x, view_y, view_w, view_h;
+    
+    if (!root || !root->visible) return NULL;
+    
+    /* Get view bounds in pixels */
+    view_get_absolute_bounds(root, &abs_bounds);
+    grid_region_to_pixel(abs_bounds.x, abs_bounds.y, &view_x, &view_y);
+    view_w = abs_bounds.width * REGION_WIDTH;
+    view_h = abs_bounds.height * REGION_HEIGHT;
+    
+    /* Check if pixel is within this view */
+    if (pixel_x < view_x || pixel_x >= view_x + view_w ||
+        pixel_y < view_y || pixel_y >= view_y + view_h) {
+        return NULL;
+    }
+    
+    /* Check children */
+    child = root->children;
+    while (child) {
+        hit = view_hit_test_pixels(child, pixel_x, pixel_y);
         if (hit) return hit;
         child = child->next_sibling;
     }
