@@ -9,6 +9,31 @@
 #include "layout_demo.h"
 #include "ui_demo.h"
 
+/* Helper function to check if command matches a string */
+static int command_matches(const char *cmd_name, int cmd_len, const char *target) {
+    int i;
+    int target_len = 0;
+    
+    /* Calculate target length */
+    while (target[target_len] != '\0') {
+        target_len++;
+    }
+    
+    /* Check length first (including the $) */
+    if (cmd_len != target_len) {
+        return 0;
+    }
+    
+    /* Compare characters */
+    for (i = 0; i < cmd_len; i++) {
+        if (cmd_name[i] != target[i]) {
+            return 0;
+        }
+    }
+    
+    return 1;
+}
+
 /* Execute a command that starts with $ */
 void execute_command(Page* page, int cmd_start, int cmd_end) {
     char cmd_name[32];
@@ -40,8 +65,7 @@ void execute_command(Page* page, int cmd_start, int cmd_end) {
     serial_write_char('\n');
     
     /* Process commands */
-    if (cmd_len == 5 && cmd_name[1] == 'd' && cmd_name[2] == 'a' && 
-        cmd_name[3] == 't' && cmd_name[4] == 'e') {
+    if (command_matches(cmd_name, cmd_len, "$date")) {
         /* $date command - insert current date/time */
         get_current_time(&now);
         
@@ -185,9 +209,7 @@ void execute_command(Page* page, int cmd_start, int cmd_end) {
         
         /* Refresh display */
         refresh_screen();
-    } else if (cmd_len == 7 && cmd_name[1] == 'r' && cmd_name[2] == 'e' && 
-               cmd_name[3] == 'n' && cmd_name[4] == 'a' && cmd_name[5] == 'm' && 
-               cmd_name[6] == 'e') {
+    } else if (command_matches(cmd_name, cmd_len, "$rename")) {
         /* $rename command - look for name after the command */
         int name_start = cmd_end;
         int name_end = cmd_end;
@@ -238,9 +260,7 @@ void execute_command(Page* page, int cmd_start, int cmd_end) {
         /* Refresh display to show new name in nav bar */
         refresh_screen();
     }
-    else if (cmd_len == 9 && cmd_name[1] == 'g' && cmd_name[2] == 'r' &&
-             cmd_name[3] == 'a' && cmd_name[4] == 'p' && cmd_name[5] == 'h' &&
-             cmd_name[6] == 'i' && cmd_name[7] == 'c' && cmd_name[8] == 's') {
+    else if (command_matches(cmd_name, cmd_len, "$graphics")) {
         /* $graphics command - switch to graphics mode for demo */
         serial_write_string("Entering graphics mode demo\n");
         
@@ -254,8 +274,7 @@ void execute_command(Page* page, int cmd_start, int cmd_end) {
         page->highlight_start = 0;
         page->highlight_end = 0;
     }
-    else if (cmd_len == 6 && cmd_name[1] == 'd' && cmd_name[2] == 'i' &&
-             cmd_name[3] == 's' && cmd_name[4] == 'p' && cmd_name[5] == 'i') {
+    else if (command_matches(cmd_name, cmd_len, "$dispi")) {
         /* $dispi command - test DISPI driver */
         serial_write_string("Testing DISPI driver\n");
         
@@ -264,9 +283,7 @@ void execute_command(Page* page, int cmd_start, int cmd_end) {
         
         /* Screen needs to be redrawn after returning from graphics mode */
         refresh_screen();
-    } else if (cmd_len == 7 && cmd_name[1] == 'l' && cmd_name[2] == 'a' && 
-               cmd_name[3] == 'y' && cmd_name[4] == 'o' && cmd_name[5] == 'u' && 
-               cmd_name[6] == 't') {
+    } else if (command_matches(cmd_name, cmd_len, "$layout")) {
         /* $layout command - test layout and view system */
         serial_write_string("Testing layout and view system\n");
         
@@ -279,7 +296,7 @@ void execute_command(Page* page, int cmd_start, int cmd_end) {
         /* Clear highlight after command execution */
         page->highlight_start = 0;
         page->highlight_end = 0;
-    } else if (cmd_len == 3 && cmd_name[1] == 'u' && cmd_name[2] == 'i') {
+    } else if (command_matches(cmd_name, cmd_len, "$ui")) {
         /* $ui command - test UI component library */
         serial_write_string("Testing UI component library\n");
         
@@ -290,6 +307,17 @@ void execute_command(Page* page, int cmd_start, int cmd_end) {
         refresh_screen();
         
         /* Clear highlight after command execution */
+        page->highlight_start = 0;
+        page->highlight_end = 0;
+    } else {
+        /* Command not recognized */
+        serial_write_string("Command not found: ");
+        for (i = 0; i < cmd_len; i++) {
+            serial_write_char(cmd_name[i]);
+        }
+        serial_write_string("\n");
+        
+        /* Clear highlight even for unrecognized commands */
         page->highlight_start = 0;
         page->highlight_end = 0;
     }
