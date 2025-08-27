@@ -112,31 +112,32 @@ void test_dispi_driver(void) {
     }
     
     /* Set up Aquinas palette */
+    /* Aquinas palette - 8-bit values that match mode 12h after >> 2 */
     /* Grayscale (0-5) */
     aquinas_palette[0][0] = 0x00; aquinas_palette[0][1] = 0x00; aquinas_palette[0][2] = 0x00;  /* Black */
-    aquinas_palette[1][0] = 0x20; aquinas_palette[1][1] = 0x20; aquinas_palette[1][2] = 0x20;  /* Dark gray */
-    aquinas_palette[2][0] = 0x38; aquinas_palette[2][1] = 0x38; aquinas_palette[2][2] = 0x38;  /* Medium dark gray */
-    aquinas_palette[3][0] = 0x50; aquinas_palette[3][1] = 0x50; aquinas_palette[3][2] = 0x50;  /* Medium gray */
-    aquinas_palette[4][0] = 0x70; aquinas_palette[4][1] = 0x70; aquinas_palette[4][2] = 0x70;  /* Light gray */
-    aquinas_palette[5][0] = 0xE8; aquinas_palette[5][1] = 0xE8; aquinas_palette[5][2] = 0xE8;  /* White */
+    aquinas_palette[1][0] = 0x40; aquinas_palette[1][1] = 0x40; aquinas_palette[1][2] = 0x40;  /* Dark gray */
+    aquinas_palette[2][0] = 0x80; aquinas_palette[2][1] = 0x80; aquinas_palette[2][2] = 0x80;  /* Medium dark gray */
+    aquinas_palette[3][0] = 0xC0; aquinas_palette[3][1] = 0xC0; aquinas_palette[3][2] = 0xC0;  /* Medium gray */
+    aquinas_palette[4][0] = 0xE0; aquinas_palette[4][1] = 0xE0; aquinas_palette[4][2] = 0xE0;  /* Light gray */
+    aquinas_palette[5][0] = 0xFC; aquinas_palette[5][1] = 0xFC; aquinas_palette[5][2] = 0xFC;  /* White */
     
     /* Reds (6-8) */
-    aquinas_palette[6][0] = 0x60; aquinas_palette[6][1] = 0x10; aquinas_palette[6][2] = 0x10;  /* Dark red */
-    aquinas_palette[7][0] = 0xA0; aquinas_palette[7][1] = 0x20; aquinas_palette[7][2] = 0x20;  /* Medium red */
-    aquinas_palette[8][0] = 0xE0; aquinas_palette[8][1] = 0x40; aquinas_palette[8][2] = 0x40;  /* Bright red */
+    aquinas_palette[6][0] = 0x80; aquinas_palette[6][1] = 0x20; aquinas_palette[6][2] = 0x20;  /* Dark red */
+    aquinas_palette[7][0] = 0xC0; aquinas_palette[7][1] = 0x30; aquinas_palette[7][2] = 0x30;  /* Medium red */
+    aquinas_palette[8][0] = 0xFC; aquinas_palette[8][1] = 0x40; aquinas_palette[8][2] = 0x40;  /* Bright red */
     
     /* Golds (9-11) */
-    aquinas_palette[9][0] = 0x80; aquinas_palette[9][1] = 0x60; aquinas_palette[9][2] = 0x20;  /* Dark gold */
-    aquinas_palette[10][0] = 0xC0; aquinas_palette[10][1] = 0xA0; aquinas_palette[10][2] = 0x40; /* Medium gold */
-    aquinas_palette[11][0] = 0xFF; aquinas_palette[11][1] = 0xE0; aquinas_palette[11][2] = 0x60; /* Bright yellow-gold */
+    aquinas_palette[9][0] = 0xA0; aquinas_palette[9][1] = 0x80; aquinas_palette[9][2] = 0x20;   /* Dark gold */
+    aquinas_palette[10][0] = 0xE0; aquinas_palette[10][1] = 0xC0; aquinas_palette[10][2] = 0x40; /* Medium gold */
+    aquinas_palette[11][0] = 0xFC; aquinas_palette[11][1] = 0xE0; aquinas_palette[11][2] = 0x60; /* Bright yellow-gold */
     
     /* Cyans (12-14) */
-    aquinas_palette[12][0] = 0x20; aquinas_palette[12][1] = 0x60; aquinas_palette[12][2] = 0x80; /* Dark cyan */
-    aquinas_palette[13][0] = 0x40; aquinas_palette[13][1] = 0xA0; aquinas_palette[13][2] = 0xC0; /* Medium cyan */
-    aquinas_palette[14][0] = 0x60; aquinas_palette[14][1] = 0xE0; aquinas_palette[14][2] = 0xFF; /* Bright cyan */
+    aquinas_palette[12][0] = 0x20; aquinas_palette[12][1] = 0x80; aquinas_palette[12][2] = 0xA0; /* Dark cyan */
+    aquinas_palette[13][0] = 0x40; aquinas_palette[13][1] = 0xC0; aquinas_palette[13][2] = 0xE0; /* Medium cyan */
+    aquinas_palette[14][0] = 0x60; aquinas_palette[14][1] = 0xE0; aquinas_palette[14][2] = 0xFC; /* Bright cyan */
     
     /* Background (15) */
-    aquinas_palette[15][0] = 0x48; aquinas_palette[15][1] = 0x48; aquinas_palette[15][2] = 0x48; /* Background gray */
+    aquinas_palette[15][0] = 0xB0; aquinas_palette[15][1] = 0xA0; aquinas_palette[15][2] = 0x80; /* Warm gray */
     
     /* Set the palette */
     if (driver->set_palette) {
