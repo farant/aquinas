@@ -35,6 +35,8 @@
 #include "rtc.h"
 #include "memory.h"
 #include "graphics.h"
+#include "dispi.h"
+#include "display_driver.h"
 
 /* Page size is one screen minus the navigation bar */
 #define PAGE_SIZE ((VGA_HEIGHT - 1) * VGA_WIDTH)
@@ -91,6 +93,8 @@ const char* get_mode_string(void);
 void execute_command(Page* page, int cmd_start, int cmd_end);
 void navigate_to_page(int new_page);
 void execute_link(Page* page, int link_start, int link_end);
+void test_dispi_driver(void);
+static void draw_dispi_circle(int cx, int cy, int r, unsigned char color);
 
 /* Allocate a new page */
 Page* allocate_page(void) {
@@ -772,6 +776,21 @@ void execute_command(Page* page, int cmd_start, int cmd_end) {
         
         /* Run the graphics demo (will return when ESC is pressed) */
         graphics_demo();
+        
+        /* Screen needs to be redrawn after returning from graphics mode */
+        refresh_screen();
+        
+        /* Clear highlight after command execution */
+        page->highlight_start = 0;
+        page->highlight_end = 0;
+    }
+    else if (cmd_len == 6 && cmd_name[1] == 'd' && cmd_name[2] == 'i' &&
+             cmd_name[3] == 's' && cmd_name[4] == 'p' && cmd_name[5] == 'i') {
+        /* $dispi command - test DISPI driver */
+        serial_write_string("Testing DISPI driver\n");
+        
+        /* Test the DISPI driver */
+        test_dispi_driver();
         
         /* Screen needs to be redrawn after returning from graphics mode */
         refresh_screen();
@@ -1935,6 +1954,238 @@ unsigned int get_max_stack_usage(void) {
         max_usage = current_usage;
     }
     return max_usage;
+}
+
+/* Test DISPI driver - recreate graphics demo using new display driver interface */
+void test_dispi_driver(void) {
+    DisplayDriver *driver;
+    int running = 1;
+    int animation_frame = 0;
+    unsigned int last_frame_time;
+    unsigned int current_time;
+    int x_pos = 0;
+    int y_pos = 0; 
+    int prev_x_pos = 0;
+    int prev_y_pos = 0;
+    int color = 1;
+    int key;
+    int i, x, y;
+    unsigned char aquinas_palette[16][3];
+    
+    serial_write_string("Starting DISPI driver demo\n");
+    
+    /* Get the DISPI driver and set it as active */
+    driver = dispi_get_driver();
+    display_set_driver(driver);
+    
+    /* Simple test: fill screen with red first */
+    serial_write_string("Testing basic framebuffer fill...\n");
+    display_clear(4);  /* Fill with light gray to test basic framebuffer access */
+    
+    /* Wait a moment to see if basic fill works */
+    for (i = 0; i < 10000000; i++) {
+        __asm__ volatile("nop");
+    }
+    
+    /* Set up Aquinas palette */
+    /* Grayscale (0-5) */
+    aquinas_palette[0][0] = 0x00; aquinas_palette[0][1] = 0x00; aquinas_palette[0][2] = 0x00;  /* Black */
+    aquinas_palette[1][0] = 0x20; aquinas_palette[1][1] = 0x20; aquinas_palette[1][2] = 0x20;  /* Dark gray */
+    aquinas_palette[2][0] = 0x38; aquinas_palette[2][1] = 0x38; aquinas_palette[2][2] = 0x38;  /* Medium dark gray */
+    aquinas_palette[3][0] = 0x50; aquinas_palette[3][1] = 0x50; aquinas_palette[3][2] = 0x50;  /* Medium gray */
+    aquinas_palette[4][0] = 0x70; aquinas_palette[4][1] = 0x70; aquinas_palette[4][2] = 0x70;  /* Light gray */
+    aquinas_palette[5][0] = 0xE8; aquinas_palette[5][1] = 0xE8; aquinas_palette[5][2] = 0xE8;  /* White */
+    
+    /* Reds (6-8) */
+    aquinas_palette[6][0] = 0x60; aquinas_palette[6][1] = 0x10; aquinas_palette[6][2] = 0x10;  /* Dark red */
+    aquinas_palette[7][0] = 0xA0; aquinas_palette[7][1] = 0x20; aquinas_palette[7][2] = 0x20;  /* Medium red */
+    aquinas_palette[8][0] = 0xE0; aquinas_palette[8][1] = 0x40; aquinas_palette[8][2] = 0x40;  /* Bright red */
+    
+    /* Golds (9-11) */
+    aquinas_palette[9][0] = 0x80; aquinas_palette[9][1] = 0x60; aquinas_palette[9][2] = 0x20;  /* Dark gold */
+    aquinas_palette[10][0] = 0xC0; aquinas_palette[10][1] = 0xA0; aquinas_palette[10][2] = 0x40; /* Medium gold */
+    aquinas_palette[11][0] = 0xFF; aquinas_palette[11][1] = 0xE0; aquinas_palette[11][2] = 0x60; /* Bright yellow-gold */
+    
+    /* Cyans (12-14) */
+    aquinas_palette[12][0] = 0x20; aquinas_palette[12][1] = 0x60; aquinas_palette[12][2] = 0x80; /* Dark cyan */
+    aquinas_palette[13][0] = 0x40; aquinas_palette[13][1] = 0xA0; aquinas_palette[13][2] = 0xC0; /* Medium cyan */
+    aquinas_palette[14][0] = 0x60; aquinas_palette[14][1] = 0xE0; aquinas_palette[14][2] = 0xFF; /* Bright cyan */
+    
+    /* Background (15) */
+    aquinas_palette[15][0] = 0x48; aquinas_palette[15][1] = 0x48; aquinas_palette[15][2] = 0x48; /* Background gray */
+    
+    /* Set the palette */
+    if (driver->set_palette) {
+        driver->set_palette(aquinas_palette);
+    }
+    
+    /* Clear screen with medium gray background */
+    display_clear(15);  /* Use color 15 for background */
+    
+    /* Draw title text (simplified - just rectangles for now) */
+    display_fill_rect(20, 5, 300, 16, 5);  /* White bar for title */
+    display_fill_rect(22, 7, 296, 12, 0);  /* Black text area */
+    
+    /* Grayscale showcase */
+    display_fill_rect(20, 40, 60, 60, 0);   /* Black */
+    display_fill_rect(90, 40, 60, 60, 1);   /* Dark gray */
+    display_fill_rect(160, 40, 60, 60, 2);  /* Medium dark gray */
+    display_fill_rect(230, 40, 60, 60, 3);  /* Medium gray */
+    display_fill_rect(300, 40, 60, 60, 4);  /* Light gray */
+    display_fill_rect(370, 40, 60, 60, 5);  /* White */
+    
+    /* Red showcase */
+    display_fill_rect(20, 120, 100, 50, 6);   /* Dark red */
+    display_fill_rect(130, 120, 100, 50, 7);  /* Medium red */
+    display_fill_rect(240, 120, 100, 50, 8);  /* Bright red */
+    
+    /* Gold showcase */
+    display_fill_rect(20, 190, 100, 50, 9);   /* Dark gold */
+    display_fill_rect(130, 190, 100, 50, 10); /* Medium gold */
+    display_fill_rect(240, 190, 100, 50, 11); /* Bright yellow-gold */
+    
+    /* Cyan showcase */
+    display_fill_rect(20, 260, 100, 50, 12);  /* Dark cyan */
+    display_fill_rect(130, 260, 100, 50, 13); /* Medium cyan */
+    display_fill_rect(240, 260, 100, 50, 14); /* Bright cyan */
+    
+    /* UI element demos */
+    display_fill_rect(10, 320, 620, 30, 1);    /* Status bar (dark gray) */
+    display_fill_rect(15, 325, 100, 20, 6);    /* Command button (dark red) */
+    display_fill_rect(120, 325, 100, 20, 12);  /* Link button (dark cyan) */
+    display_fill_rect(225, 325, 100, 20, 10);  /* Highlighted item (medium gold) */
+    display_fill_rect(330, 325, 100, 20, 8);   /* Selected item (bright red) */
+    
+    /* Border demo */
+    display_fill_rect(450, 120, 150, 100, 2);   /* Border (medium dark gray) */
+    display_fill_rect(455, 125, 140, 90, 15);   /* Background inside */
+    
+    /* Draw lines using pixels (simplified Bresenham) */
+    /* Horizontal line */
+    for (x = 360; x <= 440; x++) {
+        display_set_pixel(x, 380, 5);  /* White */
+    }
+    /* Vertical line */
+    for (y = 340; y <= 420; y++) {
+        display_set_pixel(400, y, 5);  /* White */
+    }
+    /* Diagonal lines */
+    for (i = 0; i <= 80; i++) {
+        display_set_pixel(360 + i, 340 + i, 12);  /* Diagonal \ - dark cyan */
+        display_set_pixel(360 + i, 420 - i, 6);   /* Diagonal / - dark red */
+    }
+    
+    /* Rectangle outlines */
+    /* Outer rectangle */
+    for (x = 460; x <= 540; x++) {
+        display_set_pixel(x, 360, 10);  /* Top - medium gold */
+        display_set_pixel(x, 420, 10);  /* Bottom */
+    }
+    for (y = 360; y <= 420; y++) {
+        display_set_pixel(460, y, 10);  /* Left */
+        display_set_pixel(540, y, 10);  /* Right */
+    }
+    
+    /* Inner rectangle */
+    for (x = 470; x <= 530; x++) {
+        display_set_pixel(x, 370, 11);  /* Top - bright yellow-gold */
+        display_set_pixel(x, 410, 11);  /* Bottom */
+    }
+    for (y = 370; y <= 410; y++) {
+        display_set_pixel(470, y, 11);  /* Left */
+        display_set_pixel(530, y, 11);  /* Right */
+    }
+    
+    /* Simple circle approximation (octagon) */
+    /* Draw three concentric circles at (560, 380) */
+    draw_dispi_circle(560, 380, 30, 12);  /* Large - dark cyan */
+    draw_dispi_circle(560, 380, 20, 6);   /* Medium - dark red */
+    draw_dispi_circle(560, 380, 10, 8);   /* Small - bright red */
+    
+    /* Instructions bar */
+    display_fill_rect(20, 460, 400, 16, 1);   /* Dark gray bar */
+    
+    /* Initialize timing */
+    last_frame_time = get_ticks();
+    
+    serial_write_string("DISPI demo displayed. Press ESC to exit.\n");
+    
+    /* Main loop */
+    while (running) {
+        /* Check for keyboard input using keyboard_check */
+        key = keyboard_check();
+        if (key == 27) { /* ESC - ASCII value */
+            running = 0;
+            serial_write_string("ESC pressed, exiting DISPI demo\n");
+        }
+        
+        /* Get current time */
+        current_time = get_ticks();
+        
+        /* Update animation (20 FPS) */
+        if (current_time - last_frame_time >= 50) {
+            /* Clear previous animated rectangle */
+            if (animation_frame > 0) {
+                display_fill_rect(380 + prev_x_pos, 240 + prev_y_pos, 60, 40, 15);
+            }
+            
+            /* Save current position */
+            prev_x_pos = x_pos;
+            prev_y_pos = y_pos;
+            
+            /* Update position and color */
+            animation_frame++;
+            x_pos = (animation_frame * 2) % 40;
+            y_pos = (animation_frame) % 30;
+            
+            /* Cycle through colors */
+            if ((animation_frame / 10) % 4 == 0) {
+                color = 11;  /* Bright yellow-gold */
+            } else if ((animation_frame / 10) % 4 == 1) {
+                color = 14;  /* Bright cyan */
+            } else if ((animation_frame / 10) % 4 == 2) {
+                color = 10;  /* Medium gold */
+            } else {
+                color = 13;  /* Medium cyan */
+            }
+            
+            /* Draw new animated rectangle */
+            display_fill_rect(380 + x_pos, 240 + y_pos, 60, 40, color);
+            
+            last_frame_time = current_time;
+        }
+    }
+    
+    /* Return to text mode - first disable DISPI, then set VGA text mode */
+    serial_write_string("Disabling DISPI and returning to text mode...\n");
+    
+    /* Disable DISPI first */
+    dispi_disable();
+    
+    /* Now set standard VGA text mode */
+    set_mode_03h();
+    
+    /* Clear screen to ensure clean text mode */
+    vga_clear_screen();
+    
+    serial_write_string("Exited DISPI driver demo\n");
+}
+
+/* Helper function to draw a circle using DISPI */
+static void draw_dispi_circle(int cx, int cy, int r, unsigned char color) {
+    int x, y;
+    int r2 = r * r;
+    
+    for (y = -r; y <= r; y++) {
+        for (x = -r; x <= r; x++) {
+            if (x*x + y*y <= r2) {
+                /* Only draw the outline */
+                if (x*x + y*y >= (r-2)*(r-2)) {
+                    display_set_pixel(cx + x, cy + y, color);
+                }
+            }
+        }
+    }
 }
 
 void kernel_main(void) {
