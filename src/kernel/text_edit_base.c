@@ -153,14 +153,12 @@ int text_edit_base_handle_mouse_down(TextEditBase *base, View *view, InputEvent 
     if (text_edit_base_hit_test(view, event->data.mouse.x, event->data.mouse.y)) {
         /* Set focus if not already focused */
         if (!base->has_focus) {
-            serial_write_string("text_edit_base: Setting focus\n");
             text_edit_base_set_focus(base, view, 1);
         }
         return 1;  /* Event handled */
     } else {
         /* Click outside - lose focus */
         if (base->has_focus) {
-            serial_write_string("text_edit_base: Losing focus\n");
             text_edit_base_set_focus(base, view, 0);
         }
         return 0;  /* Event not handled */

@@ -180,8 +180,6 @@ static int textarea_handle_event(View *view, InputEvent *event) {
     
     switch (event->type) {
         case EVENT_MOUSE_DOWN:
-            serial_write_string("TextArea handling MOUSE_DOWN\n");
-            
             /* Use shared base mouse handling */
             handled = text_edit_base_handle_mouse_down(&textarea->edit_base, view, event);
             
@@ -786,6 +784,12 @@ void textarea_set_font(TextArea *textarea, FontSize font) {
 /* Set focus */
 void textarea_set_focus(TextArea *textarea, int focus) {
     if (!textarea) return;
+    
+    if (focus) {
+        serial_write_string("TextArea: Got focus!\n");
+    } else {
+        serial_write_string("TextArea: Lost focus!\n");
+    }
     
     /* Use shared base focus management */
     text_edit_base_set_focus(&textarea->edit_base, &textarea->base, focus);
