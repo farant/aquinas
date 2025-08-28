@@ -1,6 +1,7 @@
 /* Text Input Component Implementation */
 
 #include "ui_textinput.h"
+#include "text_edit_base.h"
 #include "graphics_context.h"
 #include "grid.h"
 #include "dispi.h"
@@ -24,8 +25,8 @@ static int calculate_input_height(FontSize font) {
 
 /* Draw cursor at current position */
 static void draw_cursor(TextInput *input, GraphicsContext *gc, int x, int y) {
-    int char_width = (input->font == FONT_9X16) ? 9 : 6;
-    int char_height = (input->font == FONT_9X16) ? 16 : 8;
+    int char_width = (input->edit_base.font == FONT_9X16) ? 9 : 6;
+    int char_height = (input->edit_base.font == FONT_9X16) ? 16 : 8;
     int cursor_x, cursor_y;
     int visible_text_start = input->scroll_offset;
     int cursor_offset;
@@ -38,16 +39,16 @@ static void draw_cursor(TextInput *input, GraphicsContext *gc, int x, int y) {
     cursor_x = x + PADDING_SMALL + cursor_offset * char_width;
     cursor_y = y + PADDING_SMALL + 2;  /* Adjusted down by 2 pixels */
     
-    if (input->cursor_visible) {
+    if (input->edit_base.cursor_visible) {
         /* Option 1: Background highlight (like vim/terminal) */
         /* Draw filled rectangle behind the character at cursor position */
-        gc_fill_rect(gc, cursor_x, cursor_y, char_width, char_height, COLOR_MED_GOLD);
+        gc_fill_rect(gc, cursor_x, cursor_y, char_width, char_height, input->edit_base.cursor_color);
         
         /* Redraw the character at cursor position in inverted color if there is one */
         if (input->cursor_pos < input->text_length) {
             cursor_char = input->buffer[input->cursor_pos];
             /* Use dispi_draw_char with inverted colors */
-            dispi_draw_char(cursor_x, cursor_y, cursor_char, COLOR_BLACK, COLOR_MED_GOLD);
+            dispi_draw_char(cursor_x, cursor_y, cursor_char, COLOR_BLACK, input->edit_base.cursor_color);
         }
         
         /* Option 2: Underscore cursor (uncomment to use this instead) */
@@ -82,27 +83,8 @@ void textinput_draw(View *self, GraphicsContext *gc) {
     w = input->pixel_width;
     h = input->pixel_height;
     
-    /* Determine colors based on state */
-    switch (input->state) {
-        case TEXTINPUT_STATE_DISABLED:
-            bg_color = THEME_BG;
-            fg_color = COLOR_MED_DARK_GRAY;
-            border_color = COLOR_MED_DARK_GRAY;
-            break;
-            
-        case TEXTINPUT_STATE_FOCUSED:
-            bg_color = COLOR_WHITE;
-            fg_color = COLOR_BLACK;
-            border_color = COLOR_MED_CYAN;  /* Highlight when focused */
-            break;
-            
-        case TEXTINPUT_STATE_NORMAL:
-        default:
-            bg_color = COLOR_WHITE;
-            fg_color = COLOR_BLACK;
-            border_color = COLOR_MED_DARK_GRAY;
-            break;
-    }
+    /* Get colors from shared base */
+    text_edit_base_get_colors(&input->edit_base, &bg_color, &fg_color, &border_color);
     
     /* Fill background */
     gc_fill_rect(gc, x, y, w, h, bg_color);
@@ -114,20 +96,20 @@ void textinput_draw(View *self, GraphicsContext *gc) {
     gc_draw_line(gc, x + 1, y + h - 1, x + w - 1, y + h - 1, COLOR_WHITE);  /* Bottom */
     
     /* Draw focus highlight if focused */
-    if (input->state == TEXTINPUT_STATE_FOCUSED) {
-        gc_draw_rect(gc, x - 1, y - 1, w + 1, h + 1, border_color);
+    if (input->edit_base.has_focus) {
+        gc_draw_rect(gc, x - 1, y - 1, w + 1, h + 1, input->edit_base.focus_border_color);
     }
     
     /* Calculate text dimensions */
-    char_width = (input->font == FONT_9X16) ? 9 : 6;
-    char_height = (input->font == FONT_9X16) ? 16 : 8;
+    char_width = (input->edit_base.font == FONT_9X16) ? 9 : 6;
+    char_height = (input->edit_base.font == FONT_9X16) ? 16 : 8;
     
     /* Calculate visible text area */
     max_visible_chars = (w - PADDING_MEDIUM * 2) / char_width;
     
     /* Determine what text to display */
     if (input->text_length == 0 && input->placeholder && 
-        input->state != TEXTINPUT_STATE_FOCUSED) {
+        !input->edit_base.has_focus) {
         /* Show placeholder */
         display_text = input->placeholder;
         fg_color = COLOR_MED_DARK_GRAY;
@@ -156,20 +138,20 @@ void textinput_draw(View *self, GraphicsContext *gc) {
     text_x = x + PADDING_SMALL;
     text_y = y + (h - char_height) / 2;
     
-    if (input->font == FONT_9X16) {
+    if (input->edit_base.font == FONT_9X16) {
         dispi_draw_string_bios(text_x, text_y, display_text, fg_color, bg_color);
     } else {
         dispi_draw_string(text_x, text_y, display_text, fg_color, bg_color);
     }
     
     /* Draw cursor if focused */
-    if (input->state == TEXTINPUT_STATE_FOCUSED && input->text_length > 0) {
+    if (input->edit_base.has_focus && input->text_length > 0) {
         draw_cursor(input, gc, x, y);
-    } else if (input->state == TEXTINPUT_STATE_FOCUSED && input->text_length == 0) {
+    } else if (input->edit_base.has_focus && input->text_length == 0) {
         /* Draw cursor at start when empty - use same style as draw_cursor */
-        if (input->cursor_visible) {
+        if (input->edit_base.cursor_visible) {
             /* Background highlight style for empty field - use same positioning as draw_cursor */
-            gc_fill_rect(gc, text_x, y + PADDING_SMALL + 2, char_width, char_height, COLOR_MED_GOLD);
+            gc_fill_rect(gc, text_x, y + PADDING_SMALL + 2, char_width, char_height, input->edit_base.cursor_color);
             
             /* Underscore style (uncomment to use this instead) */
             /*
@@ -186,22 +168,21 @@ void textinput_draw(View *self, GraphicsContext *gc) {
 void textinput_update(View *self, int delta_ms) {
     TextInput *input = (TextInput*)self;
     
-    if (input->state == TEXTINPUT_STATE_FOCUSED) {
-        /* Track time since last typing */
-        input->last_typing_time += delta_ms;
+    /* Update cursor blinking timer */
+    if (input->edit_base.has_focus) {
+        input->edit_base.typing_timer += delta_ms;
         
-        /* Only blink cursor if we haven't typed recently (500ms threshold) */
-        if (input->last_typing_time > 500) {
-            input->cursor_blink_time += delta_ms;
-            if (input->cursor_blink_time >= CURSOR_BLINK_RATE) {
-                input->cursor_visible = !input->cursor_visible;
-                input->cursor_blink_time = 0;
+        /* Only blink if not typing */
+        if (input->edit_base.typing_timer > 500) {
+            input->edit_base.cursor_blink_timer += delta_ms;
+            if (input->edit_base.cursor_blink_timer >= CURSOR_BLINK_RATE) {
+                text_edit_base_update_cursor(&input->edit_base);
                 view_invalidate(self);
             }
         } else {
             /* Keep cursor solid while typing */
-            if (!input->cursor_visible) {
-                input->cursor_visible = 1;
+            if (!input->edit_base.cursor_visible) {
+                input->edit_base.cursor_visible = 1;
                 view_invalidate(self);
             }
         }
@@ -210,7 +191,7 @@ void textinput_update(View *self, int delta_ms) {
 
 /* Adjust scroll to keep cursor visible with context */
 static void adjust_scroll(TextInput *input) {
-    int char_width = (input->font == FONT_9X16) ? 9 : 6;
+    int char_width = (input->edit_base.font == FONT_9X16) ? 9 : 6;
     int max_visible_chars = (input->pixel_width - PADDING_SMALL * 2) / char_width;
     int min_context = 3;  /* Keep at least 3 chars visible before cursor when possible */
     
@@ -268,8 +249,7 @@ static void insert_char(TextInput *input, char c) {
     input->buffer[input->text_length] = '\0';
     
     /* Reset typing timer for solid cursor */
-    input->last_typing_time = 0;
-    input->cursor_visible = 1;
+    text_edit_base_reset_typing_timer(&input->edit_base);
     
     /* Adjust scroll to keep cursor visible */
     adjust_scroll(input);
@@ -299,8 +279,7 @@ static void delete_char(TextInput *input) {
     input->buffer[input->text_length] = '\0';
     
     /* Reset typing timer for solid cursor */
-    input->last_typing_time = 0;
-    input->cursor_visible = 1;
+    text_edit_base_reset_typing_timer(&input->edit_base);
     
     /* Fire change callback */
     if (input->on_change) {
@@ -320,8 +299,7 @@ static void backspace_char(TextInput *input) {
     delete_char(input);
     
     /* Reset typing timer for solid cursor (delete_char already does this but be explicit) */
-    input->last_typing_time = 0;
-    input->cursor_visible = 1;
+    text_edit_base_reset_typing_timer(&input->edit_base);
     
     /* Adjust scroll to keep cursor visible with context */
     adjust_scroll(input);
@@ -332,14 +310,14 @@ int textinput_handle_event(View *self, InputEvent *event) {
     TextInput *input = (TextInput*)self;
     int char_width;
     
-    if (input->state == TEXTINPUT_STATE_DISABLED) {
+    if (input->edit_base.state == TEXT_STATE_DISABLED) {
         return 0;
     }
     
     switch (event->type) {
         case EVENT_MOUSE_DOWN:
             /* Focus on click */
-            if (input->state != TEXTINPUT_STATE_FOCUSED) {
+            if (!input->edit_base.has_focus) {
                 textinput_set_focused(input, 1);
                 
                 /* Find parent layout and set focus */
@@ -354,13 +332,13 @@ int textinput_handle_event(View *self, InputEvent *event) {
             }
             
             /* Position cursor at click location */
-            char_width = (input->font == FONT_9X16) ? 9 : 6;
+            char_width = (input->edit_base.font == FONT_9X16) ? 9 : 6;
             /* TODO: Calculate cursor position from mouse x */
             
             return 1;
             
         case EVENT_KEY_DOWN:
-            if (input->state != TEXTINPUT_STATE_FOCUSED) {
+            if (!input->edit_base.has_focus) {
                 return 0;
             }
             
@@ -475,6 +453,10 @@ TextInput* textinput_create(int x, int y, int width, const char *placeholder, Fo
     input->base.destroy = NULL;
     input->base.type_name = "TextInput";
     
+    /* Initialize shared text editing base */
+    text_edit_base_init(&input->edit_base);
+    input->edit_base.font = font;
+    
     /* Initialize text buffer */
     input->buffer[0] = '\0';
     input->buffer_size = DEFAULT_BUFFER_SIZE;
@@ -484,17 +466,10 @@ TextInput* textinput_create(int x, int y, int width, const char *placeholder, Fo
     input->cursor_pos = 0;
     input->selection_start = -1;
     input->selection_end = -1;
-    input->cursor_blink_time = 0;
-    input->cursor_visible = 1;
-    input->last_typing_time = 0;
     
     /* Initialize display */
     input->scroll_offset = 0;
     input->placeholder = placeholder;
-    input->font = font;
-    
-    /* Initialize state */
-    input->state = TEXTINPUT_STATE_NORMAL;
     
     /* Initialize callbacks */
     input->on_change = NULL;
@@ -566,25 +541,17 @@ void textinput_clear(TextInput *input) {
 void textinput_set_focused(TextInput *input, int focused) {
     if (!input) return;
     
-    if (focused && input->state != TEXTINPUT_STATE_DISABLED) {
-        input->state = TEXTINPUT_STATE_FOCUSED;
-        input->cursor_visible = 1;
-        input->cursor_blink_time = 0;
-    } else if (!focused && input->state == TEXTINPUT_STATE_FOCUSED) {
-        input->state = TEXTINPUT_STATE_NORMAL;
-    }
-    
-    view_invalidate((View*)input);
+    text_edit_base_set_focus(&input->edit_base, (View*)input, focused);
 }
 
 /* Set enabled state */
 void textinput_set_enabled(TextInput *input, int enabled) {
     if (!input) return;
     
-    if (enabled && input->state == TEXTINPUT_STATE_DISABLED) {
-        input->state = TEXTINPUT_STATE_NORMAL;
+    if (enabled && input->edit_base.state == TEXT_STATE_DISABLED) {
+        input->edit_base.state = TEXT_STATE_NORMAL;
     } else if (!enabled) {
-        input->state = TEXTINPUT_STATE_DISABLED;
+        input->edit_base.state = TEXT_STATE_DISABLED;
     }
     
     view_invalidate((View*)input);

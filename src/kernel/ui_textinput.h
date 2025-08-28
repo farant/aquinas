@@ -8,17 +8,19 @@
 
 #include "view.h"
 #include "ui_theme.h"
+#include "text_edit_base.h"
 
-/* Text input states */
+/* Text input states - now using shared base states */
 typedef enum {
-    TEXTINPUT_STATE_NORMAL,
-    TEXTINPUT_STATE_FOCUSED,
-    TEXTINPUT_STATE_DISABLED
+    TEXTINPUT_STATE_NORMAL = TEXT_STATE_NORMAL,
+    TEXTINPUT_STATE_FOCUSED = TEXT_STATE_FOCUSED,
+    TEXTINPUT_STATE_DISABLED = TEXT_STATE_DISABLED
 } TextInputState;
 
 /* Text input structure */
 typedef struct TextInput {
     View base;                    /* Inherit from View */
+    TextEditBase edit_base;       /* Shared text editing functionality */
     
     /* Text buffer */
     char *buffer;                 /* Text buffer */
@@ -29,17 +31,10 @@ typedef struct TextInput {
     int cursor_pos;               /* Cursor position (0 to text_length) */
     int selection_start;          /* Selection start (-1 if no selection) */
     int selection_end;            /* Selection end */
-    unsigned int cursor_blink_time; /* For cursor blinking */
-    int cursor_visible;           /* Cursor visibility state */
-    unsigned int last_typing_time; /* Time since last keypress (for solid cursor during typing) */
     
     /* Display */
     int scroll_offset;            /* Horizontal scroll offset for long text */
     const char *placeholder;      /* Placeholder text when empty */
-    FontSize font;                /* Font size */
-    
-    /* State */
-    TextInputState state;         /* Current state */
     
     /* Callbacks */
     void (*on_change)(struct TextInput *input, void *user_data);

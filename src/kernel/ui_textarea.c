@@ -1,6 +1,7 @@
 /* UI TextArea Component Implementation */
 
 #include "ui_textarea.h"
+#include "text_edit_base.h"
 #include "graphics_context.h"
 #include "grid.h"
 #include "dispi.h"
@@ -51,9 +52,8 @@ TextArea* textarea_create(int x, int y, int width, int height) {
     view->destroy = textarea_destroy;
     view->type_name = "TextArea";
     
-    /* Calculate pixel bounds from grid coordinates */
-    textarea->pixel_x = x * REGION_WIDTH;
-    textarea->pixel_y = y * REGION_HEIGHT;
+    /* Calculate pixel dimensions (not position - View handles that) */
+    /* These are the actual pixel dimensions of the textarea content area */
     textarea->pixel_width = width * REGION_WIDTH;
     textarea->pixel_height = height * REGION_HEIGHT;
     
@@ -73,23 +73,18 @@ TextArea* textarea_create(int x, int y, int width, int height) {
     textarea->scroll_top = 0;
     textarea->scroll_left = 0;
     
+    /* Initialize shared text edit base */
+    text_edit_base_init(&textarea->edit_base);
+    textarea->edit_base.font = FONT_6X8;
+    textarea->edit_base.bg_color = COLOR_DARK_GRAY;
+    textarea->edit_base.text_color = COLOR_WHITE;
+    textarea->edit_base.focus_border_color = COLOR_BRIGHT_GOLD;
+    
     /* Calculate visible area based on pixel dimensions */
-    textarea->font = FONT_6X8;
     textarea->visible_lines = (textarea->pixel_height - TEXTAREA_PADDING * 2 - 2) / LINE_HEIGHT_6X8;
     textarea->visible_cols = (textarea->pixel_width - TEXTAREA_PADDING * 2) / 6;
     
-    /* Default colors */
-    textarea->bg_color = COLOR_DARK_GRAY;
-    textarea->text_color = COLOR_WHITE;
-    textarea->cursor_color = COLOR_MED_GOLD;
-    textarea->border_color = COLOR_MED_GRAY;
-    textarea->focus_border_color = COLOR_BRIGHT_GOLD;
-    
     /* State */
-    textarea->has_focus = 0;
-    textarea->cursor_visible = 1;
-    textarea->cursor_blink_timer = 0;
-    textarea->typing_timer = 0;
     textarea->editor_state = NULL;
     
     return textarea;
@@ -100,22 +95,28 @@ static void textarea_draw(View *view, GraphicsContext *gc) {
     TextArea *textarea = (TextArea*)view;
     RegionRect abs_bounds;
     int x, y;
-    int line_height = (textarea->font == FONT_9X16) ? LINE_HEIGHT_9X16 : LINE_HEIGHT_6X8;
-    int char_width = (textarea->font == FONT_9X16) ? 9 : 6;
-    int char_height = (textarea->font == FONT_9X16) ? 16 : 8;
+    int line_height = (textarea->edit_base.font == FONT_9X16) ? LINE_HEIGHT_9X16 : LINE_HEIGHT_6X8;
+    int char_width = (textarea->edit_base.font == FONT_9X16) ? 9 : 6;
+    int char_height = (textarea->edit_base.font == FONT_9X16) ? 16 : 8;
     int i, j, line_y, char_x;
-    unsigned char border_color;
+    unsigned char bg_color, text_color, border_color;
     TextAreaLine *line;
     
     /* Get absolute position from parent hierarchy */
     view_get_absolute_bounds(view, &abs_bounds);
     grid_region_to_pixel(abs_bounds.x, abs_bounds.y, &x, &y);
     
+    /* Use the view's actual dimensions in pixels */
+    textarea->pixel_width = abs_bounds.width * REGION_WIDTH;
+    textarea->pixel_height = abs_bounds.height * REGION_HEIGHT;
+    
+    /* Get colors from shared base */
+    text_edit_base_get_colors(&textarea->edit_base, &bg_color, &text_color, &border_color);
+    
     /* Clear background */
-    gc_fill_rect(gc, x, y, textarea->pixel_width, textarea->pixel_height, textarea->bg_color);
+    gc_fill_rect(gc, x, y, textarea->pixel_width, textarea->pixel_height, bg_color);
     
     /* Draw border */
-    border_color = textarea->has_focus ? textarea->focus_border_color : textarea->border_color;
     gc_draw_rect(gc, x, y, textarea->pixel_width, textarea->pixel_height, border_color);
     
     /* Draw visible lines */
@@ -126,35 +127,25 @@ static void textarea_draw(View *view, GraphicsContext *gc) {
         /* Draw visible characters in this line */
         for (j = textarea->scroll_left; j < line->length && j < (textarea->scroll_left + textarea->visible_cols); j++) {
             char_x = x + TEXTAREA_PADDING + (j - textarea->scroll_left) * char_width;
-            if (textarea->font == FONT_9X16) {
+            if (textarea->edit_base.font == FONT_9X16) {
                 /* Use BIOS font for 9x16 */
-                dispi_draw_char_bios(char_x, line_y, line->text[j], textarea->text_color, textarea->bg_color);
+                dispi_draw_char_bios(char_x, line_y, line->text[j], text_color, bg_color);
             } else {
-                dispi_draw_char(char_x, line_y, line->text[j], textarea->text_color, textarea->bg_color);
+                dispi_draw_char(char_x, line_y, line->text[j], text_color, bg_color);
             }
         }
     }
     
     /* Draw cursor if focused */
-    if (textarea->has_focus) {
+    if (textarea->edit_base.has_focus) {
         int cursor_visible_line = textarea->cursor_line - textarea->scroll_top;
         int cursor_visible_col = textarea->cursor_col - textarea->scroll_left;
         
-        /* Update blink timer */
-        if (textarea->typing_timer > 0) {
-            textarea->typing_timer--;
-            textarea->cursor_visible = 1;
-            textarea->cursor_blink_timer = 0;
-        } else {
-            textarea->cursor_blink_timer++;
-            if (textarea->cursor_blink_timer >= CURSOR_BLINK_RATE) {
-                textarea->cursor_visible = !textarea->cursor_visible;
-                textarea->cursor_blink_timer = 0;
-            }
-        }
+        /* Update cursor blink using shared base */
+        text_edit_base_update_cursor(&textarea->edit_base);
         
         /* Draw cursor if visible and in view */
-        if (textarea->cursor_visible && 
+        if (textarea->edit_base.cursor_visible && 
             cursor_visible_line >= 0 && cursor_visible_line < textarea->visible_lines &&
             cursor_visible_col >= 0 && cursor_visible_col <= textarea->visible_cols) {
             
@@ -162,16 +153,16 @@ static void textarea_draw(View *view, GraphicsContext *gc) {
             int cursor_y = y + TEXTAREA_PADDING + cursor_visible_line * line_height;
             
             /* Draw background-style cursor */
-            gc_fill_rect(gc, cursor_x, cursor_y, char_width, char_height, textarea->cursor_color);
+            gc_fill_rect(gc, cursor_x, cursor_y, char_width, char_height, textarea->edit_base.cursor_color);
             
             /* If there's a character at cursor position, redraw it in contrasting color */
             if (textarea->cursor_col < textarea->lines[textarea->cursor_line].length) {
                 char c = textarea->lines[textarea->cursor_line].text[textarea->cursor_col];
                 /* Draw black character on gold cursor background */
-                if (textarea->font == FONT_9X16) {
-                    dispi_draw_char_bios(cursor_x, cursor_y, c, COLOR_BLACK, textarea->cursor_color);
+                if (textarea->edit_base.font == FONT_9X16) {
+                    dispi_draw_char_bios(cursor_x, cursor_y, c, COLOR_BLACK, textarea->edit_base.cursor_color);
                 } else {
-                    dispi_draw_char(cursor_x, cursor_y, c, COLOR_BLACK, textarea->cursor_color);
+                    dispi_draw_char(cursor_x, cursor_y, c, COLOR_BLACK, textarea->edit_base.cursor_color);
                 }
             }
         }
@@ -185,48 +176,26 @@ static int textarea_handle_event(View *view, InputEvent *event) {
     int local_x, local_y;
     RegionRect abs_bounds;
     int abs_x, abs_y;
-    
+    int handled;
     
     switch (event->type) {
         case EVENT_MOUSE_DOWN:
-            serial_write_string("TextArea received MOUSE_DOWN at ");
-            serial_write_hex(event->data.mouse.x);
-            serial_write_string(",");
-            serial_write_hex(event->data.mouse.y);
-            serial_write_string("\n");
+            serial_write_string("TextArea handling MOUSE_DOWN\n");
             
-            /* Get absolute position of textarea */
+            /* Use shared base mouse handling */
+            handled = text_edit_base_handle_mouse_down(&textarea->edit_base, view, event);
+            
+            if (!handled) {
+                return 0;  /* Click was outside, focus already handled */
+            }
+            
+            /* Get absolute position for cursor calculation */
             view_get_absolute_bounds(view, &abs_bounds);
             grid_region_to_pixel(abs_bounds.x, abs_bounds.y, &abs_x, &abs_y);
-            
-            serial_write_string("TextArea bounds: ");
-            serial_write_hex(abs_x);
-            serial_write_string(",");
-            serial_write_hex(abs_y);
-            serial_write_string(" size ");
-            serial_write_hex(textarea->pixel_width);
-            serial_write_string("x");
-            serial_write_hex(textarea->pixel_height);
-            serial_write_string("\n");
-            
-            /* Check if click is within textarea bounds */
-            if (event->data.mouse.x < abs_x || 
-                event->data.mouse.x >= abs_x + textarea->pixel_width ||
-                event->data.mouse.y < abs_y || 
-                event->data.mouse.y >= abs_y + textarea->pixel_height) {
-                /* Click outside textarea - lose focus */
-                serial_write_string("Click outside textarea bounds\n");
-                textarea->has_focus = 0;
-                return 0;
-            }
             
             /* Calculate local coordinates relative to textarea content area */
             local_x = event->data.mouse.x - abs_x;
             local_y = event->data.mouse.y - abs_y;
-            
-            /* Set focus */
-            textarea->has_focus = 1;
-            serial_write_string("TextArea FOCUSED!\n");
             
             /* Calculate which line was clicked */
             line_idx = get_line_at_y(textarea, local_y);
@@ -238,16 +207,17 @@ static int textarea_handle_event(View *view, InputEvent *event) {
                 textarea->cursor_col = col_idx;
             }
             
-            /* Reset cursor blink */
-            textarea->cursor_visible = 1;
-            textarea->cursor_blink_timer = 0;
+            /* Reset cursor blink using shared base */
+            text_edit_base_reset_typing_timer(&textarea->edit_base);
             
             view->needs_redraw = 1;
             return 1;
             
         case EVENT_KEY_DOWN:
-            if (textarea->has_focus) {
+            if (textarea->edit_base.has_focus) {
                 textarea_handle_key(textarea, event->data.keyboard.ascii);
+                /* Reset typing timer to keep cursor solid */
+                text_edit_base_reset_typing_timer(&textarea->edit_base);
                 view->needs_redraw = 1;
                 return 1;
             }
@@ -262,7 +232,7 @@ static int textarea_handle_event(View *view, InputEvent *event) {
 
 /* Get line index at y coordinate */
 static int get_line_at_y(TextArea *textarea, int y) {
-    int line_height = (textarea->font == FONT_9X16) ? LINE_HEIGHT_9X16 : LINE_HEIGHT_6X8;
+    int line_height = (textarea->edit_base.font == FONT_9X16) ? LINE_HEIGHT_9X16 : LINE_HEIGHT_6X8;
     int relative_y = y - TEXTAREA_PADDING;
     int line_idx;
     
@@ -278,7 +248,7 @@ static int get_line_at_y(TextArea *textarea, int y) {
 
 /* Get column index at x coordinate for given line */
 static int get_col_at_x(TextArea *textarea, int line_idx, int x) {
-    int char_width = (textarea->font == FONT_9X16) ? 9 : 6;
+    int char_width = (textarea->edit_base.font == FONT_9X16) ? 9 : 6;
     int relative_x = x - TEXTAREA_PADDING;
     int col_idx;
     
@@ -352,7 +322,7 @@ void textarea_insert_char(TextArea *textarea, char c) {
     }
     
     /* Reset typing timer */
-    textarea->typing_timer = TYPING_TIMEOUT;
+    text_edit_base_reset_typing_timer(&textarea->edit_base);
     
     /* Ensure cursor is visible */
     ensure_cursor_visible(textarea);
@@ -392,7 +362,7 @@ void textarea_delete_char(TextArea *textarea) {
         textarea->line_count--;
     }
     
-    textarea->typing_timer = TYPING_TIMEOUT;
+    text_edit_base_reset_typing_timer(&textarea->edit_base);
 }
 
 /* Backspace */
@@ -434,7 +404,7 @@ void textarea_backspace(TextArea *textarea) {
         textarea->line_count--;
     }
     
-    textarea->typing_timer = TYPING_TIMEOUT;
+    text_edit_base_reset_typing_timer(&textarea->edit_base);
     ensure_cursor_visible(textarea);
 }
 
@@ -558,7 +528,7 @@ void textarea_delete_word_backward(TextArea *textarea) {
     line->text[line->length] = '\0';
     textarea->total_chars -= chars_to_delete;
     
-    textarea->typing_timer = TYPING_TIMEOUT;
+    text_edit_base_reset_typing_timer(&textarea->edit_base);
 }
 
 /* Delete to end of line (Ctrl+K) */
@@ -578,7 +548,7 @@ void textarea_delete_to_end_of_line(TextArea *textarea) {
         line->text[line->length] = '\0';
     }
     
-    textarea->typing_timer = TYPING_TIMEOUT;
+    text_edit_base_reset_typing_timer(&textarea->edit_base);
 }
 
 /* Delete to start of line (Ctrl+U) */
@@ -603,7 +573,7 @@ void textarea_delete_to_start_of_line(TextArea *textarea) {
     /* Move cursor to beginning */
     textarea->cursor_col = 0;
     
-    textarea->typing_timer = TYPING_TIMEOUT;
+    text_edit_base_reset_typing_timer(&textarea->edit_base);
 }
 
 /* Ensure cursor is visible by adjusting scroll */
@@ -792,16 +762,16 @@ void textarea_get_text(TextArea *textarea, char *buffer, int buffer_size) {
 /* Set colors */
 void textarea_set_colors(TextArea *textarea, unsigned char bg, unsigned char text,
                         unsigned char cursor, unsigned char border, unsigned char focus_border) {
-    textarea->bg_color = bg;
-    textarea->text_color = text;
-    textarea->cursor_color = cursor;
-    textarea->border_color = border;
-    textarea->focus_border_color = focus_border;
+    textarea->edit_base.bg_color = bg;
+    textarea->edit_base.text_color = text;
+    textarea->edit_base.cursor_color = cursor;
+    textarea->edit_base.border_color = border;
+    textarea->edit_base.focus_border_color = focus_border;
 }
 
 /* Set font */
 void textarea_set_font(TextArea *textarea, FontSize font) {
-    textarea->font = font;
+    textarea->edit_base.font = font;
     
     /* Recalculate visible area */
     if (font == FONT_9X16) {
@@ -815,11 +785,10 @@ void textarea_set_font(TextArea *textarea, FontSize font) {
 
 /* Set focus */
 void textarea_set_focus(TextArea *textarea, int focus) {
-    textarea->has_focus = focus;
-    if (focus) {
-        textarea->cursor_visible = 1;
-        textarea->cursor_blink_timer = 0;
-    }
+    if (!textarea) return;
+    
+    /* Use shared base focus management */
+    text_edit_base_set_focus(&textarea->edit_base, &textarea->base, focus);
 }
 
 /* Destroy textarea */
