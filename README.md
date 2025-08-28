@@ -30,12 +30,19 @@ aquinas/
 │   │   ├── dispi_demo.c/h       # DISPI graphics demonstration
 │   │   ├── display_driver.c/h   # Display driver abstraction layer
 │   │   ├── dispi_cursor.c/h     # Mouse cursor for DISPI mode
+│   │   ├── dispi_init.c/h       # DISPI graphics initialization
 │   │   ├── view.c/h             # Hierarchical view system for UI
 │   │   ├── layout.c/h           # Layout manager for screen regions
+│   │   ├── layout_demo.c/h      # Layout system demonstration
+│   │   ├── mouse.c/h             # Centralized mouse driver
+│   │   ├── ui_button.c/h        # Button component
+│   │   ├── ui_label.c/h         # Label component
+│   │   ├── ui_panel.c/h         # Panel component
+│   │   ├── ui_theme.h           # UI color themes and constants
+│   │   ├── ui_demo.c/h          # UI component library demo
 │   │   ├── pci.c/h              # PCI bus scanning for graphics devices
 │   │   ├── font_6x8.h           # HP 100LX bitmap font
 │   │   ├── text_renderer.c/h    # Text rendering for graphics modes
-│   │   ├── mouse.h              # Mouse definitions
 │   │   ├── memory.c/h           # Memory management
 │   │   ├── timer.c/h            # Timer and timing functions
 │   │   ├── timer_asm.asm        # Timer assembly helpers
@@ -114,10 +121,29 @@ make debug-all   # Maximum verbosity
 - **Tab support**: Tab key inserts actual tab characters (displayed as 2 spaces)
 
 ### Mouse Support
-- Serial mouse via QEMU's `-serial msmouse` option
+
+#### Centralized Mouse Driver
+The system features a unified mouse driver that handles all mouse input and event generation:
+
+- **Hardware Support**: Serial mouse via QEMU's `-serial msmouse` option
+- **Protocol**: Microsoft 3-byte serial mouse packets
+- **Coordinate Tracking**: Maintains current mouse position with sub-pixel precision
+- **Event Generation**: Converts raw packets into high-level events
+
+#### Mouse Events
+The mouse driver generates semantic events for UI components:
+- **EVENT_MOUSE_DOWN**: Button press at specific coordinates
+- **EVENT_MOUSE_UP**: Button release
+- **EVENT_MOUSE_MOVE**: Mouse movement
+- **EVENT_MOUSE_ENTER**: Mouse entered a view's bounds
+- **EVENT_MOUSE_LEAVE**: Mouse left a view's bounds
+
+#### Features
 - Click on navigation buttons to switch pages
-- Visual cursor indicator (green background)
-- Smooth movement with accumulator-based precision
+- Visual cursor indicator (green background in text mode, arrow in graphics mode)
+- Smooth movement with accumulator-based sub-pixel precision
+- Hover state detection for UI components
+- Pixel-precise hit testing for accurate interaction
 
 ### Keyboard Features
 - Full keyboard support with shift key for capitals and symbols
@@ -218,6 +244,49 @@ Both graphics modes feature:
 - Keyboard input handling (ESC to exit)
 - Proper state preservation when returning to text mode
 
+### UI Component Library
+
+The system includes a complete UI component library built on top of the view system:
+
+#### Components
+- **Button**: Clickable buttons with multiple states and styles
+  - States: Normal, Hover, Pressed, Disabled
+  - Styles: Normal (gray), Primary (cyan), Danger (red)
+  - Supports both 6×8 and 9×16 fonts
+  - 3D raised/sunken visual effects
+  - Pixel-precise hit detection for accurate hover states
+
+- **Label**: Text display component
+  - Text alignment: Left, Center, Right
+  - Custom foreground/background colors
+  - Transparent background support
+  - Word wrapping (optional)
+  - Supports both font sizes
+
+- **Panel**: Container component for organizing UI
+  - Title bar with text
+  - Border styles: None, Flat, Raised, Sunken
+  - 3D border effects for depth
+  - Custom background colors
+  - Can contain child components
+
+#### Theme System
+- **Color Palette**: Warm gray background (#B0A080) with accent colors
+  - Grays: 6 shades from black to white
+  - Accent colors: Cyan (info/selection), Red (danger), Yellow/Gold (emphasis)
+- **Consistent Styling**: All components follow the theme
+- **Visual Feedback**: Hover and press states with appropriate color changes
+
+#### Architecture
+- **Region vs Pixel Coordinates**:
+  - Regions (90×80 pixels): High-level layout containers for screen organization
+  - Pixel bounds: Precise positioning for UI components within regions
+  - Components store actual pixel dimensions for accurate hit testing
+- **Event System**: 
+  - Mouse enter/leave events for hover states
+  - Click handling with callbacks
+  - Event propagation through view hierarchy
+
 ### View System and Layout Manager
 
 The editor includes a hierarchical view system and layout manager for building complex UI components:
@@ -253,6 +322,7 @@ Commands perform actions and can insert output into the text:
 - **$graphics**: Launches VGA mode 12h graphics demo
 - **$dispi**: Launches DISPI/VBE graphics demo with text rendering
 - **$layout**: Launches layout and view system demo showcasing UI components
+- **$ui**: Launches UI component library demo with buttons, labels, and panels
 
 When clicking a command, it intelligently handles output insertion:
 - Uses existing whitespace when available
@@ -277,6 +347,26 @@ Navigation history is automatically tracked, allowing #back to retrace your step
 - `0x200000` - Stack (2MB mark, grows downward)
 
 ## API Examples
+
+### Creating UI Components
+```c
+/* Create a button at region (1,1) */
+Button *btn = button_create(1, 1, "Click Me", FONT_6X8);
+button_set_style(btn, BUTTON_STYLE_PRIMARY);
+button_set_callback(btn, on_button_click, user_data);
+
+/* Create a label with centered text */
+Label *label = label_create(0, 0, 200, "Welcome", FONT_9X16);
+label_set_align(label, ALIGN_CENTER);
+label_set_colors(label, COLOR_WHITE, COLOR_DARK_GRAY);
+
+/* Create a panel to contain components */
+Panel *panel = panel_create(0, 0, 300, 200);
+panel_set_title(panel, "Settings", FONT_6X8);
+panel_set_border(panel, BORDER_RAISED, THEME_BORDER);
+panel_add_child(panel, (View*)btn);
+panel_add_child(panel, (View*)label);
+```
 
 ### Creating a Simple View
 ```c
@@ -305,7 +395,7 @@ layout_set_split(layout, navigator, target, 3);
 
 ### Boot Process
 1. BIOS loads boot sector to `0x7C00`
-2. Bootloader loads kernel from IDE hard drive to `0x8000` (144 sectors = 72KB)
+2. Bootloader loads kernel from IDE hard drive to `0x8000` (176 sectors = 88KB)
 3. Bootloader enables A20 line for >1MB memory access
 4. Bootloader switches CPU to 32-bit protected mode
 5. Bootloader jumps to kernel entry point
@@ -361,7 +451,8 @@ The navigation bar displays:
 - **Page storage**: Static array of 100 pages maximum
 - **Graphics drivers**: Abstracted display driver interface supporting both VGA and DISPI
 - **Memory management**: Bump allocator with ~300KB allocated for double buffering
-- **Bootloader**: Loads up to 144 sectors (72KB) of kernel code
+- **Bootloader**: Loads up to 176 sectors (88KB) of kernel code
+- **Command system**: Pattern-matching command parser with error handling
 - **UI Architecture**: Layered system from device drivers up to layout management:
   - Display drivers (VGA/DISPI abstraction)
   - Graphics primitives (lines, circles, rectangles)
