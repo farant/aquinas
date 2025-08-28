@@ -25,7 +25,7 @@ start:
     int 0x13
     jc error
     
-    ; Load final 24KB (48 sectors) to 0x18000 (segment 0x1800:0x0000)
+    ; Load final 32KB (64 sectors) to 0x18000 (segment 0x1800:0x0000)
     mov si, dap3        ; Point to third Disk Address Packet
     mov ah, 0x42        ; Extended Read
     mov dl, 0x80        ; Drive 0x80
@@ -113,7 +113,7 @@ dap2:
 dap3:
     db 0x10             ; Size of packet (16 bytes)
     db 0                ; Reserved (0)
-    dw 48               ; Number of sectors to read (24KB)
+    dw 64               ; Number of sectors to read (32KB)
     dw 0x0000           ; Offset to load to
     dw 0x1800           ; Segment to load to (0x1800:0x0000 = physical 0x18000)
     dd 129              ; Starting LBA (sector 129, after first 128 sectors)

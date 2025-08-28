@@ -195,29 +195,11 @@ static void dispi_driver_get_palette(unsigned char palette[16][3]);
 static void dispi_driver_clear_screen(unsigned char color);
 static void dispi_driver_vsync(void);
 
-/* The DISPI display driver */
-static DisplayDriver dispi_driver = {
-    DISPI_WIDTH,     /* width */
-    DISPI_HEIGHT,    /* height */
-    DISPI_BPP,       /* bpp */
-    
-    dispi_driver_init,        /* init */
-    dispi_driver_shutdown,     /* shutdown */
-    
-    dispi_driver_set_pixel,    /* set_pixel */
-    dispi_driver_get_pixel,    /* get_pixel */
-    
-    dispi_driver_fill_rect,    /* fill_rect */
-    dispi_driver_blit,         /* blit */
-    
-    dispi_driver_set_palette,  /* set_palette */
-    dispi_driver_get_palette,  /* get_palette */
-    
-    dispi_driver_clear_screen, /* clear_screen */
-    dispi_driver_vsync,        /* vsync */
-    
-    "DISPI/VBE"               /* name */
-};
+/* Driver name constant */
+static const char dispi_driver_name[] = "DISPI/VBE";
+
+/* The DISPI display driver - initialized at runtime in dispi_get_driver() */
+static DisplayDriver dispi_driver;
 
 /* Initialize driver */
 static void dispi_driver_init(void) {
@@ -365,16 +347,50 @@ static void dispi_driver_vsync(void) {
 
 /* Get the DISPI driver */
 DisplayDriver* dispi_get_driver(void) {
+    /* Initialize driver fields at runtime to work around static init issues */
+    dispi_driver.width = DISPI_WIDTH;
+    dispi_driver.height = DISPI_HEIGHT;
+    dispi_driver.bpp = DISPI_BPP;
+    
+    dispi_driver.init = dispi_driver_init;
+    dispi_driver.shutdown = dispi_driver_shutdown;
+    
+    dispi_driver.set_pixel = dispi_driver_set_pixel;
+    dispi_driver.get_pixel = dispi_driver_get_pixel;
+    
+    dispi_driver.fill_rect = dispi_driver_fill_rect;
+    dispi_driver.blit = dispi_driver_blit;
+    
+    dispi_driver.set_palette = dispi_driver_set_palette;
+    dispi_driver.get_palette = dispi_driver_get_palette;
+    
+    dispi_driver.clear_screen = dispi_driver_clear_screen;
+    dispi_driver.vsync = dispi_driver_vsync;
+    
+    dispi_driver.name = dispi_driver_name;
+    
     serial_write_string("dispi_get_driver returning driver at: ");
     serial_write_hex((unsigned int)&dispi_driver);
-    serial_write_string(" with name: ");
+    serial_write_string(" with name ptr: ");
     serial_write_hex((unsigned int)dispi_driver.name);
+    if (dispi_driver.name) {
+        serial_write_string(" (");
+        serial_write_string(dispi_driver.name);
+        serial_write_string(")");
+    }
+    serial_write_string("\n");
+    serial_write_string("  init func: ");
+    serial_write_hex((unsigned int)dispi_driver.init);
     serial_write_string("\n");
     return &dispi_driver;
 }
 
 /* Initialize double buffering */
 int dispi_init_double_buffer(void) {
+    serial_write_string("dispi_init_double_buffer: dispi_available = ");
+    serial_write_hex(dispi_available);
+    serial_write_string("\n");
+    
     if (!dispi_available) {
         serial_write_string("ERROR: Cannot init double buffer - DISPI not available\n");
         return 0;

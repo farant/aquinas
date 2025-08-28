@@ -8,6 +8,7 @@
 #include "ui_label.h"
 #include "ui_panel.h"
 #include "ui_textinput.h"
+#include "ui_textarea.h"
 #include "ui_theme.h"
 #include "layout.h"
 #include "view.h"
@@ -81,12 +82,13 @@ void test_ui_demo(void) {
     Layout *layout;
     GraphicsContext *gc;
     DisplayDriver *driver;
-    Panel *main_panel, *button_panel, *label_panel, *input_panel;
+    Panel *main_panel, *button_panel, *label_panel, *input_panel, *textarea_panel;
     Button *btn_normal, *btn_primary, *btn_danger, *btn_disabled;
     Button *btn_6x8, *btn_9x16, *btn_exit;
     Label *lbl_title, *lbl_left, *lbl_center, *lbl_right;
-    Label *lbl_colors, *lbl_name, *lbl_email;
+    Label *lbl_colors, *lbl_name, *lbl_email, *lbl_textarea;
     TextInput *txt_name, *txt_email;
+    TextArea *textarea;
     int running = 1;
     int key;
     unsigned int last_update = 0;
@@ -189,6 +191,18 @@ void test_ui_demo(void) {
     textinput_set_on_change(txt_email, on_textinput_change, NULL);
     textinput_set_on_submit(txt_email, on_textinput_submit, NULL);
     
+    /* Create textarea panel */
+    textarea_panel = panel_create(4, 0, 270, 150);
+    panel_set_title(textarea_panel, "TextArea", FONT_6X8);
+    panel_set_border(textarea_panel, BORDER_SUNKEN, THEME_BORDER);
+    
+    /* Create textarea label and textarea */
+    lbl_textarea = label_create(0, 0, 250, "Multi-line text editor:", FONT_6X8);
+    /* TextArea should use grid coordinates like other components */
+    /* Position at grid cell (0,1) within the panel, spanning 3x2 cells */
+    textarea = textarea_create(0, 1, 3, 2);  /* Grid coordinates like other UI components */
+    textarea_set_text(textarea, "Hello, World!\nThis is a multi-line\ntext area component.\n\nType here to edit!");
+    
     /* Create colored label */
     lbl_colors = label_create(5, 4, 200, "Cyan on dark gray", FONT_9X16);
     label_set_colors(lbl_colors, COLOR_BRIGHT_CYAN, COLOR_DARK_GRAY);
@@ -204,6 +218,7 @@ void test_ui_demo(void) {
     view_add_child((View*)main_panel, (View*)button_panel);
     view_add_child((View*)main_panel, (View*)label_panel);
     view_add_child((View*)main_panel, (View*)input_panel);
+    view_add_child((View*)main_panel, (View*)textarea_panel);
     view_add_child((View*)button_panel, (View*)btn_normal);
     view_add_child((View*)button_panel, (View*)btn_primary);
     view_add_child((View*)button_panel, (View*)btn_danger);
@@ -217,6 +232,8 @@ void test_ui_demo(void) {
     view_add_child((View*)input_panel, (View*)lbl_email);
     view_add_child((View*)input_panel, (View*)txt_name);
     view_add_child((View*)input_panel, (View*)txt_email);
+    view_add_child((View*)textarea_panel, (View*)lbl_textarea);
+    view_add_child((View*)textarea_panel, (View*)textarea);
     view_add_child((View*)main_panel, (View*)lbl_colors);
     view_add_child((View*)main_panel, (View*)btn_exit);
     

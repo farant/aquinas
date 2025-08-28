@@ -14,6 +14,7 @@ int ctrl_pressed = 0;
 int keyboard_get_key_event(unsigned char *scancode, char *ascii) {
     unsigned char status;
     unsigned char keycode;
+    static int extended_key = 0;  /* Track if we're in an extended key sequence */
     
     /* Simple scancode to ASCII */
     static const char scancode_map[128] = {
@@ -49,6 +50,46 @@ int keyboard_get_key_event(unsigned char *scancode, char *ascii) {
     
     /* Read the keycode */
     keycode = inb(0x60);
+    
+    /* Check for extended key prefix (0xE0) */
+    if (keycode == 0xE0) {
+        extended_key = 1;
+        return 0;  /* Wait for next byte */
+    }
+    
+    /* Handle extended keys */
+    if (extended_key) {
+        extended_key = 0;
+        
+        /* Map extended scan codes - add 0x80 to distinguish from regular keys */
+        if (scancode) {
+            *scancode = keycode | 0x80;  /* Mark as extended key */
+        }
+        
+        /* Handle extended key release */
+        if (keycode & 0x80) {
+            if (ascii) *ascii = 0;
+            return -1;  /* Key release */
+        }
+        
+        /* Map extended keys to special ASCII values for easier handling */
+        if (ascii) {
+            switch (keycode) {
+                case 0x48: *ascii = 0x11; break;  /* Up arrow */
+                case 0x50: *ascii = 0x12; break;  /* Down arrow */
+                case 0x4B: *ascii = 0x13; break;  /* Left arrow */
+                case 0x4D: *ascii = 0x14; break;  /* Right arrow */
+                case 0x47: *ascii = 0x15; break;  /* Home */
+                case 0x4F: *ascii = 0x16; break;  /* End */
+                case 0x49: *ascii = 0x17; break;  /* Page Up */
+                case 0x51: *ascii = 0x18; break;  /* Page Down */
+                case 0x53: *ascii = 0x7F; break;  /* Delete */
+                default: *ascii = 0; break;
+            }
+        }
+        
+        return 1;  /* Extended key press */
+    }
     
     /* Return the scancode */
     if (scancode) {
@@ -93,7 +134,10 @@ int keyboard_get_key_event(unsigned char *scancode, char *ascii) {
     /* Convert to ASCII if it's a printable key */
     if (ascii) {
         if (keycode < 128) {
-            if (shift_pressed) {
+            /* Apply Ctrl key modification */
+            if (ctrl_pressed && scancode_map[keycode] >= 'a' && scancode_map[keycode] <= 'z') {
+                *ascii = scancode_map[keycode] - 'a' + 1;  /* Ctrl+A = 1, Ctrl+B = 2, etc. */
+            } else if (shift_pressed) {
                 *ascii = scancode_map_shift[keycode];
             } else {
                 *ascii = scancode_map[keycode];

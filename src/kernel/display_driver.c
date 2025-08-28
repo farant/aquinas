@@ -27,8 +27,15 @@ void display_set_driver(DisplayDriver *driver) {
         }
         serial_write_string("\n");
         
+        serial_write_string("Checking driver->init: ");
+        serial_write_hex((unsigned int)active_display_driver->init);
+        serial_write_string("\n");
         if (active_display_driver->init) {
+            serial_write_string("Calling driver->init()\n");
             active_display_driver->init();
+            serial_write_string("driver->init() returned\n");
+        } else {
+            serial_write_string("driver->init is NULL!\n");
         }
     }
 }
