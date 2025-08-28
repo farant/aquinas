@@ -11,7 +11,7 @@ aquinas/
 ├── src/                          # Source code
 │   ├── boot/                    # Bootloader
 │   │   └── boot.asm             # Boot sector (loads kernel, switches to protected mode)
-│   ├── kernel/                  # Kernel code  
+│   ├── kernel/                  # Kernel code
 │   │   ├── kernel_entry.asm     # Assembly entry point
 │   │   ├── kernel.c             # Main kernel and event loop
 │   │   ├── page.c/h             # Page management and navigation
@@ -20,33 +20,41 @@ aquinas/
 │   │   ├── commands.c/h         # Command and link execution
 │   │   ├── modes.c/h            # Editor mode management (Normal/Insert/Visual)
 │   │   ├── input.c/h            # Keyboard and mouse input handling
+│   │   ├── mouse.c/h            # Centralized mouse driver
 │   │   ├── serial.c/h           # Serial port communication (mouse & debug)
 │   │   ├── io.h                 # Port I/O functions
-│   │   ├── vga.c/h              # VGA text mode implementation
-│   │   ├── graphics.c/h         # VGA graphics mode (320x200 mode 12h)
-│   │   ├── graphics_context.c/h # Graphics context system (clipping, patterns)
-│   │   ├── grid.c/h             # Grid system for UI layout
-│   │   ├── dispi.c/h            # DISPI/VBE graphics driver (640x480)
-│   │   ├── dispi_demo.c/h       # DISPI graphics demonstration
-│   │   ├── display_driver.c/h   # Display driver abstraction layer
-│   │   ├── dispi_cursor.c/h     # Mouse cursor for DISPI mode
-│   │   ├── dispi_init.c/h       # DISPI graphics initialization
-│   │   ├── view.c/h             # Hierarchical view system for UI
-│   │   ├── layout.c/h           # Layout manager for screen regions
-│   │   ├── layout_demo.c/h      # Layout system demonstration
-│   │   ├── mouse.c/h             # Centralized mouse driver
-│   │   ├── ui_button.c/h        # Button component
-│   │   ├── ui_label.c/h         # Label component
-│   │   ├── ui_panel.c/h         # Panel component
-│   │   ├── ui_theme.h           # UI color themes and constants
-│   │   ├── ui_demo.c/h          # UI component library demo
-│   │   ├── pci.c/h              # PCI bus scanning for graphics devices
-│   │   ├── font_6x8.h           # HP 100LX bitmap font
-│   │   ├── text_renderer.c/h    # Text rendering for graphics modes
 │   │   ├── memory.c/h           # Memory management
 │   │   ├── timer.c/h            # Timer and timing functions
 │   │   ├── timer_asm.asm        # Timer assembly helpers
-│   │   └── rtc.c/h              # Real-time clock
+│   │   ├── rtc.c/h              # Real-time clock
+│   │   ├── pci.c/h              # PCI bus scanning for graphics devices
+│   │   │
+│   │   ├── vga.c/h              # VGA text mode implementation
+│   │   ├── graphics.c/h         # VGA graphics mode (320x200 mode 12h)
+│   │   ├── graphics_context.c/h # Graphics context system (clipping, patterns)
+│   │   ├── display_driver.c/h   # Display driver abstraction layer
+│   │   ├── dispi.c/h            # DISPI/VBE graphics driver (640x480)
+│   │   ├── dispi_cursor.c/h     # Mouse cursor for DISPI mode
+│   │   ├── dispi_init.c/h       # DISPI graphics initialization
+│   │   ├── dispi_demo.c/h       # DISPI graphics demonstration
+│   │   ├── font_6x8.h           # HP 100LX bitmap font
+│   │   ├── text_renderer.c/h    # Text rendering for graphics modes
+│   │   ├── grid.c/h             # Grid system for UI layout
+│   │   │
+│   │   ├── view.c/h             # Hierarchical view system for UI
+│   │   ├── view_interface.c/h   # ViewInterface lifecycle management
+│   │   ├── event_bus.c/h        # Event bus for decoupled event routing
+│   │   ├── layout.c/h           # Layout manager for screen regions
+│   │   ├── layout_demo.c/h      # Layout system demonstration
+│   │   │
+│   │   ├── ui_theme.h           # UI color themes and constants
+│   │   ├── ui_button.c/h        # Button component
+│   │   ├── ui_label.c/h         # Label component
+│   │   ├── ui_panel.c/h         # Panel container component
+│   │   ├── ui_textinput.c/h     # Single-line text input component
+│   │   ├── ui_textarea.c/h      # Multi-line text area component
+│   │   ├── text_edit_base.c/h   # Shared text editing functionality
+│   │   └── ui_demo.c/h          # UI component library demo
 │   └── linker.ld                # Linker script
 ├── build/                       # Build outputs (gitignored)
 │   ├── *.o                      # Object files
@@ -494,7 +502,10 @@ Navigation history is automatically tracked, allowing #back to retrace your step
 ## Memory Map
 
 - `0x7C00` - Boot sector loaded by BIOS
-- `0x8000` - Kernel loaded by bootloader
+- `0x8000` - Kernel loaded by bootloader (first 32KB)
+- `0x10000` - Kernel continuation (second 32KB)
+- `0x18000` - Kernel continuation (third 32KB)
+- `0x20000` - Kernel continuation (fourth 32KB, up to 128KB total)
 - `0xB8000` - VGA text buffer
 - `0x200000` - Stack (2MB mark, grows downward)
 
@@ -547,7 +558,7 @@ layout_set_split(layout, navigator, target, 3);
 
 ### Boot Process
 1. BIOS loads boot sector to `0x7C00`
-2. Bootloader loads kernel from IDE hard drive to `0x8000` (176 sectors = 88KB)
+2. Bootloader loads kernel from IDE hard drive to `0x8000` (256 sectors = 128KB)
 3. Bootloader enables A20 line for >1MB memory access
 4. Bootloader switches CPU to 32-bit protected mode
 5. Bootloader jumps to kernel entry point
@@ -603,7 +614,7 @@ The navigation bar displays:
 - **Page storage**: Static array of 100 pages maximum
 - **Graphics drivers**: Abstracted display driver interface supporting both VGA and DISPI
 - **Memory management**: Bump allocator with ~300KB allocated for double buffering
-- **Bootloader**: Loads up to 176 sectors (88KB) of kernel code
+- **Bootloader**: Loads up to 256 sectors (128KB) of kernel code in four 32KB chunks
 - **Command system**: Pattern-matching command parser with error handling
 - **UI Architecture**: Layered system from device drivers up to layout management:
   - Display drivers (VGA/DISPI abstraction)
