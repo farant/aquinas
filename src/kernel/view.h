@@ -17,7 +17,8 @@ typedef enum {
     EVENT_MOUSE_MOVE,
     EVENT_MOUSE_CLICK,
     EVENT_MOUSE_ENTER,
-    EVENT_MOUSE_LEAVE
+    EVENT_MOUSE_LEAVE,
+    EVENT_TYPE_COUNT  /* Must be last - used for array sizing */
 } EventType;
 
 typedef struct InputEvent {

@@ -1,6 +1,7 @@
 /* UI Component Library Demo
  * 
  * Showcases all UI components with different styles and configurations.
+ * Now includes event bus demonstration.
  */
 
 #include "ui_demo.h"
@@ -57,6 +58,29 @@ static void on_textinput_submit(TextInput *input, void *user_data) {
     serial_write_string("Text submitted: ");
     serial_write_string(textinput_get_text(input));
     serial_write_string("\n");
+}
+
+/* Global keyboard handler using event bus - demonstrates system-level shortcuts */
+static int ui_demo_global_key_handler(View *view, InputEvent *event, void *context) {
+    (void)view;  /* Not used - this is a global handler */
+    (void)context;
+    
+    /* Only handle key down events */
+    if (event->type != EVENT_KEY_DOWN) return 0;
+    
+    /* Check for F1 key (scancode 0x3B) for help */
+    if (event->data.keyboard.key == 0x3B) {
+        serial_write_string("[Event Bus Demo] F1 pressed - Global help shortcut intercepted!\n");
+        return 1;  /* Event handled, stop propagation */
+    }
+    
+    /* Check for F2 key (scancode 0x3C) for info */
+    if (event->data.keyboard.key == 0x3C) {
+        serial_write_string("[Event Bus Demo] F2 pressed - Showing system info via event bus\n");
+        return 1;  /* Event handled */
+    }
+    
+    return 0;  /* Not handled, continue propagation */
 }
 
 /* Mouse event handler */
@@ -123,6 +147,13 @@ void test_ui_demo(void) {
     /* Store layout for mouse handler */
     g_ui_demo_layout = layout;
     g_ui_demo_needs_redraw = 0;
+    
+    /* Demonstrate event bus by subscribing a global keyboard handler */
+    if (layout->event_bus) {
+        serial_write_string("Subscribing global F1/F2 handler to event bus (SYSTEM priority)\n");
+        event_bus_subscribe(layout->event_bus, NULL, EVENT_KEY_DOWN, 
+                          EVENT_PRIORITY_SYSTEM, ui_demo_global_key_handler, NULL);
+    }
     
     /* Create main panel */
     main_panel = panel_create(0, 0, 640, 480);

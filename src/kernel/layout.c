@@ -59,6 +59,12 @@ void layout_init(Layout *layout) {
     layout->root_view = view_create(0, 0, 7, 6);  /* Full screen */
     layout->needs_redraw = 1;
     layout->background_color = 0;  /* Black */
+    
+    /* Create event bus */
+    layout->event_bus = event_bus_create();
+    if (!layout->event_bus) {
+        serial_write_string("WARNING: Failed to create event bus for layout\n");
+    }
 }
 
 /* Destroy a layout */
@@ -84,6 +90,11 @@ void layout_destroy(Layout *layout) {
     /* Destroy root view */
     if (layout->root_view) {
         view_destroy(layout->root_view);
+    }
+    
+    /* Destroy event bus */
+    if (layout->event_bus) {
+        event_bus_destroy(layout->event_bus);
     }
     
     /* Note: Memory not actually freed due to allocator limitations */
@@ -521,6 +532,14 @@ int layout_handle_event(Layout *layout, InputEvent *event) {
     int handled = 0;
     
     if (!layout || !event) return 0;
+    
+    /* First, try dispatching through event bus if available */
+    if (layout->event_bus) {
+        handled = event_bus_dispatch(layout->event_bus, event);
+        if (handled) {
+            return 1;  /* Event was handled by bus subscriber */
+        }
+    }
     
     /* For mouse events, find target view */
     if (event->type == EVENT_MOUSE_DOWN || 

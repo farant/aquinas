@@ -3,6 +3,7 @@
 
 #include "view.h"
 #include "grid.h"
+#include "event_bus.h"
 
 /* Region roles for Acme-style navigation */
 typedef enum {
@@ -67,6 +68,9 @@ typedef struct Layout {
     /* Layout properties */
     int needs_redraw;
     unsigned char background_color;
+    
+    /* Event bus for decoupled event handling */
+    EventBus *event_bus;
 } Layout;
 
 /* Layout initialization and configuration */
