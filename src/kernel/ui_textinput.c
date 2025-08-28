@@ -208,6 +208,46 @@ void textinput_update(View *self, int delta_ms) {
     }
 }
 
+/* Adjust scroll to keep cursor visible with context */
+static void adjust_scroll(TextInput *input) {
+    int char_width = (input->font == FONT_9X16) ? 9 : 6;
+    int max_visible_chars = (input->pixel_width - PADDING_SMALL * 2) / char_width;
+    int min_context = 3;  /* Keep at least 3 chars visible before cursor when possible */
+    
+    /* If all text fits, reset scroll to 0 */
+    if (input->text_length <= max_visible_chars) {
+        input->scroll_offset = 0;
+        return;
+    }
+    
+    /* If cursor is off the left edge, scroll left with context */
+    if (input->cursor_pos < input->scroll_offset) {
+        input->scroll_offset = input->cursor_pos - min_context;
+        if (input->scroll_offset < 0) {
+            input->scroll_offset = 0;
+        }
+    }
+    /* If cursor is off the right edge, scroll right with context */
+    else if (input->cursor_pos >= input->scroll_offset + max_visible_chars) {
+        input->scroll_offset = input->cursor_pos - max_visible_chars + 1;
+        /* Try to keep some context before cursor */
+        if (input->cursor_pos >= min_context) {
+            int ideal_offset = input->cursor_pos - max_visible_chars + min_context;
+            if (ideal_offset > input->scroll_offset) {
+                input->scroll_offset = ideal_offset;
+            }
+        }
+    }
+    
+    /* Ensure scroll doesn't go past end of text */
+    if (input->scroll_offset > input->text_length - max_visible_chars) {
+        input->scroll_offset = input->text_length - max_visible_chars;
+    }
+    if (input->scroll_offset < 0) {
+        input->scroll_offset = 0;
+    }
+}
+
 /* Insert character at cursor position */
 static void insert_char(TextInput *input, char c) {
     int i;
@@ -231,10 +271,8 @@ static void insert_char(TextInput *input, char c) {
     input->last_typing_time = 0;
     input->cursor_visible = 1;
     
-    /* Adjust scroll if needed */
-    if (input->cursor_pos > input->scroll_offset + 20) {
-        input->scroll_offset = input->cursor_pos - 20;
-    }
+    /* Adjust scroll to keep cursor visible */
+    adjust_scroll(input);
     
     /* Fire change callback */
     if (input->on_change) {
@@ -285,10 +323,8 @@ static void backspace_char(TextInput *input) {
     input->last_typing_time = 0;
     input->cursor_visible = 1;
     
-    /* Adjust scroll if needed */
-    if (input->cursor_pos < input->scroll_offset) {
-        input->scroll_offset = input->cursor_pos;
-    }
+    /* Adjust scroll to keep cursor visible with context */
+    adjust_scroll(input);
 }
 
 /* Handle text input events */
@@ -343,9 +379,7 @@ int textinput_handle_event(View *self, InputEvent *event) {
                 case 0x4B:  /* Left arrow */
                     if (input->cursor_pos > 0) {
                         input->cursor_pos--;
-                        if (input->cursor_pos < input->scroll_offset) {
-                            input->scroll_offset = input->cursor_pos;
-                        }
+                        adjust_scroll(input);
                         view_invalidate(self);
                     }
                     return 1;
@@ -353,31 +387,26 @@ int textinput_handle_event(View *self, InputEvent *event) {
                 case 0x4D:  /* Right arrow */
                     if (input->cursor_pos < input->text_length) {
                         input->cursor_pos++;
-                        if (input->cursor_pos > input->scroll_offset + 20) {
-                            input->scroll_offset = input->cursor_pos - 20;
-                        }
+                        adjust_scroll(input);
                         view_invalidate(self);
                     }
                     return 1;
                     
                 case 0x47:  /* Home */
                     input->cursor_pos = 0;
-                    input->scroll_offset = 0;
+                    adjust_scroll(input);
                     view_invalidate(self);
                     return 1;
                     
                 case 0x4F:  /* End */
                     input->cursor_pos = input->text_length;
-                    if (input->cursor_pos > 20) {
-                        input->scroll_offset = input->cursor_pos - 20;
-                    } else {
-                        input->scroll_offset = 0;
-                    }
+                    adjust_scroll(input);
                     view_invalidate(self);
                     return 1;
                     
                 case 0x53:  /* Delete */
                     delete_char(input);
+                    adjust_scroll(input);
                     return 1;
                     
                 default:
