@@ -99,4 +99,8 @@ void dispi_draw_string(int x, int y, const char *str, unsigned char fg, unsigned
 /* Get the display driver for DISPI */
 struct DisplayDriver* dispi_get_driver(void);
 
+/* Direct framebuffer access (bypasses double buffering - for cursor) */
+void dispi_set_pixel_direct(int x, int y, unsigned char color);
+unsigned char dispi_get_pixel_direct(int x, int y);
+
 #endif

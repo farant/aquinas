@@ -9,9 +9,6 @@
 #define CURSOR_HOTSPOT_X 0
 #define CURSOR_HOTSPOT_Y 0
 
-/* Maximum background buffer size (including 1-pixel border) */
-#define CURSOR_BG_SIZE ((CURSOR_WIDTH + 2) * (CURSOR_HEIGHT + 2))
-
 /* Initialize the cursor system */
 void dispi_cursor_init(void);
 

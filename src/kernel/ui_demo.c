@@ -223,9 +223,10 @@ void test_ui_demo(void) {
     /* Initial draw */
     layout_draw(layout, gc);
     if (dispi_is_double_buffered()) {
-        dispi_cursor_show();
         dispi_flip_buffers();
     }
+    /* Show cursor after initial draw */
+    dispi_cursor_show();
     
     serial_write_string("UI demo displayed. Click buttons, ESC to exit\n");
     
@@ -275,10 +276,22 @@ void test_ui_demo(void) {
         /* Redraw if needed */
         if (g_ui_demo_needs_redraw || (layout && layout->needs_redraw) || 
             (layout->root_view && layout->root_view->needs_redraw)) {
+            /* Draw to backbuffer */
             layout_draw(layout, gc);
-            dispi_cursor_hide();
-            dispi_cursor_show();
+            
+            /* Flip buffers to show new content */
             dispi_flip_buffers();
+            
+            /* Redraw cursor on new front buffer 
+             * The cursor needs to be redrawn after every flip because
+             * it draws directly to the framebuffer */
+            if (dispi_cursor_is_visible()) {
+                int mx, my;
+                dispi_cursor_get_pos(&mx, &my);
+                dispi_cursor_hide();
+                dispi_cursor_show();
+            }
+            
             g_ui_demo_needs_redraw = 0;
         }
     }

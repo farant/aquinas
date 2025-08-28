@@ -2,6 +2,7 @@
 
 #include "dispi_cursor.h"
 #include "display_driver.h"
+#include "dispi.h"
 #include "serial.h"
 
 /* Classic arrow cursor bitmap - 12x20 pixels
@@ -31,73 +32,13 @@ static const unsigned char cursor_arrow[] = {
 
 /* Cursor state */
 static struct {
-    int x, y;                               /* Current position */
-    int saved_x, saved_y;                   /* Position where background was saved */
-    int visible;                            /* Is cursor shown? */
-    unsigned char saved_bg[CURSOR_BG_SIZE]; /* Saved background pixels */
+    int x, y;        /* Current position */
+    int visible;     /* Is cursor shown? */
 } cursor_state = {
     320, 240,    /* Start in center of 640x480 */
-    -1, -1,      /* No saved position initially */
-    0,           /* Hidden initially */
-    {0}          /* Clear background buffer */
+    0            /* Hidden initially */
 };
 
-/* Save background pixels where cursor will be drawn */
-static void save_background(int x, int y) {
-    DisplayDriver *driver = display_get_driver();
-    int row, col, px, py, bg_index = 0;
-    
-    if (!driver || !driver->get_pixel) {
-        return;
-    }
-    
-    cursor_state.saved_x = x;
-    cursor_state.saved_y = y;
-    
-    /* Save pixels including 1-pixel border around cursor */
-    for (row = -1; row <= CURSOR_HEIGHT; row++) {
-        for (col = -1; col <= CURSOR_WIDTH; col++) {
-            px = x + col - CURSOR_HOTSPOT_X;
-            py = y + row - CURSOR_HOTSPOT_Y;
-            
-            /* Check bounds */
-            if (px >= 0 && px < driver->width && py >= 0 && py < driver->height) {
-                cursor_state.saved_bg[bg_index] = driver->get_pixel(px, py);
-            } else {
-                cursor_state.saved_bg[bg_index] = 0; /* Black for out of bounds */
-            }
-            bg_index++;
-        }
-    }
-}
-
-/* Restore background pixels where cursor was drawn */
-static void restore_background(void) {
-    DisplayDriver *driver = display_get_driver();
-    int row, col, px, py, bg_index = 0;
-    
-    if (!driver || !driver->set_pixel) {
-        return;
-    }
-    
-    if (cursor_state.saved_x < 0 || cursor_state.saved_y < 0) {
-        return; /* No saved background */
-    }
-    
-    /* Restore pixels */
-    for (row = -1; row <= CURSOR_HEIGHT; row++) {
-        for (col = -1; col <= CURSOR_WIDTH; col++) {
-            px = cursor_state.saved_x + col - CURSOR_HOTSPOT_X;
-            py = cursor_state.saved_y + row - CURSOR_HOTSPOT_Y;
-            
-            /* Check bounds */
-            if (px >= 0 && px < driver->width && py >= 0 && py < driver->height) {
-                driver->set_pixel(px, py, cursor_state.saved_bg[bg_index]);
-            }
-            bg_index++;
-        }
-    }
-}
 
 /* Draw the cursor with black outline */
 static void draw_cursor_at(int x, int y) {
@@ -135,13 +76,13 @@ static void draw_cursor_at(int x, int y) {
                             if (n_col < 0 || n_col >= CURSOR_WIDTH || 
                                 n_row < 0 || n_row >= CURSOR_HEIGHT) {
                                 /* Neighbor is outside cursor bounds - draw outline */
-                                driver->set_pixel(px, py, 0); /* Black outline */
+                                dispi_set_pixel_direct(px, py, 0); /* Black outline */
                             } else {
                                 /* Check if neighbor pixel is not part of cursor */
                                 int n_byte = n_row * 2 + (n_col / 8);
                                 int n_bit = 7 - (n_col % 8);
                                 if (!(cursor_arrow[n_byte] & (1 << n_bit))) {
-                                    driver->set_pixel(px, py, 0); /* Black outline */
+                                    dispi_set_pixel_direct(px, py, 0); /* Black outline */
                                 }
                             }
                         }
@@ -163,7 +104,7 @@ static void draw_cursor_at(int x, int y) {
                 
                 /* Check bounds */
                 if (px >= 0 && px < driver->width && py >= 0 && py < driver->height) {
-                    driver->set_pixel(px, py, 5); /* White cursor */
+                    dispi_set_pixel_direct(px, py, 5); /* White cursor */
                 }
             }
         }
@@ -174,8 +115,6 @@ static void draw_cursor_at(int x, int y) {
 void dispi_cursor_init(void) {
     cursor_state.x = 320;
     cursor_state.y = 240;
-    cursor_state.saved_x = -1;
-    cursor_state.saved_y = -1;
     cursor_state.visible = 0;
     
     serial_write_string("DISPI cursor initialized\n");
@@ -184,7 +123,6 @@ void dispi_cursor_init(void) {
 /* Show the cursor */
 void dispi_cursor_show(void) {
     if (!cursor_state.visible) {
-        save_background(cursor_state.x, cursor_state.y);
         draw_cursor_at(cursor_state.x, cursor_state.y);
         cursor_state.visible = 1;
     }
@@ -193,10 +131,8 @@ void dispi_cursor_show(void) {
 /* Hide the cursor */
 void dispi_cursor_hide(void) {
     if (cursor_state.visible) {
-        restore_background();
         cursor_state.visible = 0;
-        cursor_state.saved_x = -1;
-        cursor_state.saved_y = -1;
+        /* Note: We don't restore background since double buffering handles that */
     }
 }
 
@@ -219,21 +155,13 @@ void dispi_cursor_move(int x, int y) {
         return;
     }
     
+    /* Update position */
+    cursor_state.x = x;
+    cursor_state.y = y;
+    
     if (cursor_state.visible) {
-        /* Restore old position */
-        restore_background();
-        
-        /* Update position */
-        cursor_state.x = x;
-        cursor_state.y = y;
-        
-        /* Draw at new position */
-        save_background(cursor_state.x, cursor_state.y);
+        /* Just redraw at new position */
         draw_cursor_at(cursor_state.x, cursor_state.y);
-    } else {
-        /* Just update position */
-        cursor_state.x = x;
-        cursor_state.y = y;
     }
 }
 

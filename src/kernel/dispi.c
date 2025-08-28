@@ -429,6 +429,21 @@ unsigned char* dispi_get_backbuffer(void) {
     return backbuffer;
 }
 
+/* Direct framebuffer access for cursor (bypasses double buffering) */
+void dispi_set_pixel_direct(int x, int y, unsigned char color) {
+    if (x >= 0 && x < DISPI_WIDTH && y >= 0 && y < DISPI_HEIGHT) {
+        framebuffer[y * DISPI_WIDTH + x] = color;
+    }
+}
+
+/* Direct framebuffer read for cursor (bypasses double buffering) */
+unsigned char dispi_get_pixel_direct(int x, int y) {
+    if (x >= 0 && x < DISPI_WIDTH && y >= 0 && y < DISPI_HEIGHT) {
+        return framebuffer[y * DISPI_WIDTH + x];
+    }
+    return 0;
+}
+
 /* Cleanup double buffering */
 void dispi_cleanup_double_buffer(void) {
     if (backbuffer) {
