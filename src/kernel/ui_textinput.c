@@ -2,6 +2,7 @@
 
 #include "ui_textinput.h"
 #include "text_edit_base.h"
+#include "view_interface.h"
 #include "graphics_context.h"
 #include "grid.h"
 #include "dispi.h"
@@ -10,6 +11,37 @@
 
 #define CURSOR_BLINK_RATE 500  /* Milliseconds */
 #define DEFAULT_BUFFER_SIZE 256
+
+/* Forward declarations for interface callbacks */
+static void textinput_interface_init(View *view, ViewContext *context);
+static void textinput_interface_destroy(View *view);
+static void textinput_interface_on_focus_gained(View *view);
+static void textinput_interface_on_focus_lost(View *view);
+static int textinput_interface_can_focus(View *view);
+static RegionRect textinput_interface_get_preferred_size(View *view);
+
+/* TextInput ViewInterface definition */
+static ViewInterface textinput_interface = {
+    /* Lifecycle methods */
+    textinput_interface_init,
+    textinput_interface_destroy,
+    
+    /* Parent-child callbacks */
+    NULL,  /* Use defaults */
+    NULL,
+    NULL,
+    NULL,
+    
+    /* State changes */
+    textinput_interface_on_focus_gained,
+    textinput_interface_on_focus_lost,
+    NULL,  /* Use default for visibility */
+    NULL,  /* Use default for enabled */
+    
+    /* Capabilities */
+    textinput_interface_can_focus,
+    textinput_interface_get_preferred_size
+};
 
 /* Calculate text input width in pixels */
 static int calculate_input_width(int width) {
@@ -405,6 +437,71 @@ int textinput_handle_event(View *self, InputEvent *event) {
     return 0;
 }
 
+/* ViewInterface callback implementations */
+
+static void textinput_interface_init(View *view, ViewContext *context) {
+    TextInput *input = (TextInput*)view;
+    (void)context;  /* Unused for now */
+    
+    serial_write_string("TextInput: Interface init called\n");
+    
+    /* Initialize shared text editing base if not already done */
+    text_edit_base_init(&input->edit_base);
+}
+
+static void textinput_interface_destroy(View *view) {
+    TextInput *input = (TextInput*)view;
+    
+    serial_write_string("TextInput: Interface destroy called\n");
+    
+    /* Free text buffer */
+    if (input->buffer) {
+        /* Note: Our allocator doesn't support free yet */
+        input->buffer = NULL;
+    }
+}
+
+static void textinput_interface_on_focus_gained(View *view) {
+    TextInput *input = (TextInput*)view;
+    
+    serial_write_string("TextInput: Got focus via interface!\n");
+    
+    /* Update focus state using shared base */
+    text_edit_base_set_focus(&input->edit_base, view, 1);
+    
+    /* Mark for redraw */
+    view->needs_redraw = 1;
+}
+
+static void textinput_interface_on_focus_lost(View *view) {
+    TextInput *input = (TextInput*)view;
+    
+    serial_write_string("TextInput: Lost focus via interface!\n");
+    
+    /* Update focus state using shared base */
+    text_edit_base_set_focus(&input->edit_base, view, 0);
+    
+    /* Mark for redraw */
+    view->needs_redraw = 1;
+}
+
+static int textinput_interface_can_focus(View *view) {
+    TextInput *input = (TextInput*)view;
+    
+    /* Can focus if not disabled */
+    return input->edit_base.state != TEXT_STATE_DISABLED;
+}
+
+static RegionRect textinput_interface_get_preferred_size(View *view) {
+    TextInput *input = (TextInput*)view;
+    RegionRect size;
+    
+    /* Return current bounds as preferred size */
+    size = view->bounds;
+    
+    return size;
+}
+
 /* Create a text input */
 TextInput* textinput_create(int x, int y, int width, const char *placeholder, FontSize font) {
     TextInput *input;
@@ -452,10 +549,17 @@ TextInput* textinput_create(int x, int y, int width, const char *placeholder, Fo
     input->base.handle_event = textinput_handle_event;
     input->base.destroy = NULL;
     input->base.type_name = "TextInput";
+    input->base.interface = &textinput_interface;  /* Set ViewInterface */
     
     /* Initialize shared text editing base */
     text_edit_base_init(&input->edit_base);
     input->edit_base.font = font;
+    
+    /* Initialize the view through its interface */
+    if (input->base.interface) {
+        ViewContext context = {NULL, NULL, NULL, NULL};
+        view_interface_init(&input->base, input->base.interface, &context);
+    }
     
     /* Initialize text buffer */
     input->buffer[0] = '\0';
@@ -541,7 +645,17 @@ void textinput_clear(TextInput *input) {
 void textinput_set_focused(TextInput *input, int focused) {
     if (!input) return;
     
-    text_edit_base_set_focus(&input->edit_base, (View*)input, focused);
+    /* Use interface notification if available */
+    if (input->base.interface) {
+        if (focused) {
+            view_interface_notify_focus_gained(&input->base);
+        } else {
+            view_interface_notify_focus_lost(&input->base);
+        }
+    } else {
+        /* Fall back to direct method */
+        text_edit_base_set_focus(&input->edit_base, (View*)input, focused);
+    }
 }
 
 /* Set enabled state */

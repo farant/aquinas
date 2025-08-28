@@ -36,6 +36,9 @@ typedef struct InputEvent {
     } data;
 } InputEvent;
 
+/* Forward declaration for ViewInterface */
+struct ViewInterface;
+
 /* View structure - represents a drawable, interactive UI element */
 typedef struct View {
     /* Position and size */
@@ -62,6 +65,9 @@ typedef struct View {
     
     /* Optional: view type identifier for debugging */
     const char *type_name;
+    
+    /* View interface for lifecycle management */
+    struct ViewInterface *interface;
 } View;
 
 /* View lifecycle functions */

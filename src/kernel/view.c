@@ -6,6 +6,7 @@
  */
 
 #include "view.h"
+#include "view_interface.h"
 #include "memory.h"
 #include "serial.h"
 #include "grid.h"
@@ -45,6 +46,9 @@ View* view_create(int x, int y, int width, int height) {
     
     view->type_name = "View";
     
+    /* Initialize interface to NULL - will be set by subclasses */
+    view->interface = NULL;
+    
     return view;
 }
 
@@ -54,8 +58,11 @@ void view_destroy(View *view) {
     
     if (!view) return;
     
-    /* Call custom destroy if provided */
-    if (view->destroy) {
+    /* Use interface destroy if available */
+    if (view->interface) {
+        view_interface_destroy(view);
+    } else if (view->destroy) {
+        /* Fall back to old-style destroy for backwards compatibility */
         view->destroy(view);
     }
     
@@ -79,12 +86,16 @@ void view_destroy(View *view) {
 /* Add a child view to a parent */
 void view_add_child(View *parent, View *child) {
     View *sibling;
+    View *old_parent;
     
     if (!parent || !child) return;
     
+    /* Store old parent for notifications */
+    old_parent = child->parent;
+    
     /* Remove from previous parent if any */
-    if (child->parent) {
-        view_remove_child(child->parent, child);
+    if (old_parent) {
+        view_remove_child(old_parent, child);
     }
     
     /* Set new parent */
@@ -103,6 +114,11 @@ void view_add_child(View *parent, View *child) {
     }
     
     child->next_sibling = NULL;
+    
+    /* Notify interfaces about the parent change */
+    if (child->interface || parent->interface) {
+        view_interface_notify_parent_changed(child, old_parent, parent);
+    }
     
     /* Mark parent for redraw */
     view_invalidate(parent);
@@ -153,6 +169,12 @@ void view_set_visible(View *view, int visible) {
     if (!view || view->visible == visible) return;
     
     view->visible = visible;
+    
+    /* Notify interface about visibility change */
+    if (view->interface) {
+        view_interface_notify_visibility_changed(view, visible);
+    }
+    
     view_invalidate(view);
     
     /* If hiding, also hide focus/hover states */

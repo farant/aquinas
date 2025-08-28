@@ -2,6 +2,7 @@
 
 #include "ui_textarea.h"
 #include "text_edit_base.h"
+#include "view_interface.h"
 #include "graphics_context.h"
 #include "grid.h"
 #include "dispi.h"
@@ -22,6 +23,94 @@ static void textarea_destroy(View *view);
 static void ensure_cursor_visible(TextArea *textarea);
 static int get_line_at_y(TextArea *textarea, int y);
 static int get_col_at_x(TextArea *textarea, int line_idx, int x);
+
+/* Interface callback declarations */
+static void textarea_interface_init(View *view, ViewContext *context);
+static void textarea_interface_destroy(View *view);
+static void textarea_interface_on_focus_gained(View *view);
+static void textarea_interface_on_focus_lost(View *view);
+static int textarea_interface_can_focus(View *view);
+static RegionRect textarea_interface_get_preferred_size(View *view);
+
+/* TextArea ViewInterface definition */
+static ViewInterface textarea_interface = {
+    /* Lifecycle methods */
+    textarea_interface_init,
+    textarea_interface_destroy,
+    
+    /* Parent-child callbacks */
+    NULL,  /* Use defaults */
+    NULL,
+    NULL,
+    NULL,
+    
+    /* State changes */
+    textarea_interface_on_focus_gained,
+    textarea_interface_on_focus_lost,
+    NULL,  /* Use default for visibility */
+    NULL,  /* Use default for enabled */
+    
+    /* Capabilities */
+    textarea_interface_can_focus,
+    textarea_interface_get_preferred_size
+};
+
+/* ViewInterface callback implementations */
+
+static void textarea_interface_init(View *view, ViewContext *context) {
+    TextArea *textarea = (TextArea*)view;
+    (void)context;  /* Unused for now */
+    
+    serial_write_string("TextArea: Interface init called\n");
+    
+    /* Initialize shared text editing base */
+    text_edit_base_init(&textarea->edit_base);
+}
+
+static void textarea_interface_destroy(View *view) {
+    TextArea *textarea = (TextArea*)view;
+    
+    serial_write_string("TextArea: Interface destroy called\n");
+    
+    /* Clean up if needed */
+    (void)textarea;
+}
+
+static void textarea_interface_on_focus_gained(View *view) {
+    TextArea *textarea = (TextArea*)view;
+    
+    serial_write_string("TextArea: Got focus via interface!\n");
+    
+    /* Update focus state using shared base */
+    text_edit_base_set_focus(&textarea->edit_base, view, 1);
+    
+    /* Mark for redraw */
+    view->needs_redraw = 1;
+}
+
+static void textarea_interface_on_focus_lost(View *view) {
+    TextArea *textarea = (TextArea*)view;
+    
+    serial_write_string("TextArea: Lost focus via interface!\n");
+    
+    /* Update focus state using shared base */
+    text_edit_base_set_focus(&textarea->edit_base, view, 0);
+    
+    /* Mark for redraw */
+    view->needs_redraw = 1;
+}
+
+static int textarea_interface_can_focus(View *view) {
+    TextArea *textarea = (TextArea*)view;
+    
+    /* Can focus if not disabled */
+    return textarea->edit_base.state != TEXT_STATE_DISABLED;
+}
+
+static RegionRect textarea_interface_get_preferred_size(View *view) {
+    /* Return current bounds as preferred size */
+    return view->bounds;
+}
 
 /* Create a new textarea */
 TextArea* textarea_create(int x, int y, int width, int height) {
@@ -51,6 +140,7 @@ TextArea* textarea_create(int x, int y, int width, int height) {
     view->handle_event = textarea_handle_event;
     view->destroy = textarea_destroy;
     view->type_name = "TextArea";
+    view->interface = &textarea_interface;  /* Set ViewInterface */
     
     /* Calculate pixel dimensions (not position - View handles that) */
     /* These are the actual pixel dimensions of the textarea content area */
@@ -79,6 +169,12 @@ TextArea* textarea_create(int x, int y, int width, int height) {
     textarea->edit_base.bg_color = COLOR_DARK_GRAY;
     textarea->edit_base.text_color = COLOR_WHITE;
     textarea->edit_base.focus_border_color = COLOR_BRIGHT_GOLD;
+    
+    /* Initialize the view through its interface */
+    if (view->interface) {
+        ViewContext context = {NULL, NULL, NULL, NULL};
+        view_interface_init(view, view->interface, &context);
+    }
     
     /* Calculate visible area based on pixel dimensions */
     textarea->visible_lines = (textarea->pixel_height - TEXTAREA_PADDING * 2 - 2) / LINE_HEIGHT_6X8;
@@ -785,14 +881,22 @@ void textarea_set_font(TextArea *textarea, FontSize font) {
 void textarea_set_focus(TextArea *textarea, int focus) {
     if (!textarea) return;
     
-    if (focus) {
-        serial_write_string("TextArea: Got focus!\n");
+    /* Use interface notification if available */
+    if (textarea->base.interface) {
+        if (focus) {
+            view_interface_notify_focus_gained(&textarea->base);
+        } else {
+            view_interface_notify_focus_lost(&textarea->base);
+        }
     } else {
-        serial_write_string("TextArea: Lost focus!\n");
+        /* Fall back to direct method */
+        if (focus) {
+            serial_write_string("TextArea: Got focus!\n");
+        } else {
+            serial_write_string("TextArea: Lost focus!\n");
+        }
+        text_edit_base_set_focus(&textarea->edit_base, &textarea->base, focus);
     }
-    
-    /* Use shared base focus management */
-    text_edit_base_set_focus(&textarea->edit_base, &textarea->base, focus);
 }
 
 /* Destroy textarea */
