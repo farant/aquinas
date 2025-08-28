@@ -15,7 +15,9 @@ typedef enum {
     EVENT_MOUSE_DOWN,
     EVENT_MOUSE_UP,
     EVENT_MOUSE_MOVE,
-    EVENT_MOUSE_CLICK
+    EVENT_MOUSE_CLICK,
+    EVENT_MOUSE_ENTER,
+    EVENT_MOUSE_LEAVE
 } EventType;
 
 typedef struct InputEvent {

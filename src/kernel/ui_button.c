@@ -40,11 +40,13 @@ void button_draw(View *self, GraphicsContext *gc) {
     int label_len = 0;
     const char *p;
     
-    /* Get absolute bounds in pixels */
+    /* Get absolute position from parent hierarchy */
     view_get_absolute_bounds(self, &abs_bounds);
     grid_region_to_pixel(abs_bounds.x, abs_bounds.y, &x, &y);
-    w = abs_bounds.width * REGION_WIDTH;
-    h = abs_bounds.height * REGION_HEIGHT;
+    
+    /* Use actual button pixel dimensions, not full region size */
+    w = button->pixel_width;
+    h = button->pixel_height;
     
     /* Determine colors based on state and style */
     switch (button->state) {
@@ -147,6 +149,20 @@ void button_draw(View *self, GraphicsContext *gc) {
     }
 }
 
+/* Check if pixel coordinates are within button's actual bounds */
+static int button_contains_pixel(Button *button, int pixel_x, int pixel_y) {
+    RegionRect abs_bounds;
+    int abs_x, abs_y;
+    
+    /* Get absolute position */
+    view_get_absolute_bounds((View*)button, &abs_bounds);
+    grid_region_to_pixel(abs_bounds.x, abs_bounds.y, &abs_x, &abs_y);
+    
+    /* Check if pixel is within button's actual pixel bounds */
+    return (pixel_x >= abs_x && pixel_x < abs_x + button->pixel_width &&
+            pixel_y >= abs_y && pixel_y < abs_y + button->pixel_height);
+}
+
 /* Handle button events */
 int button_handle_event(View *self, InputEvent *event) {
     Button *button = (Button*)self;
@@ -156,36 +172,63 @@ int button_handle_event(View *self, InputEvent *event) {
     }
     
     switch (event->type) {
+        case EVENT_MOUSE_ENTER:
         case EVENT_MOUSE_MOVE:
-            /* Update hover state */
+            /* Check if mouse is over actual button area */
+            if (button_contains_pixel(button, event->data.mouse.x, event->data.mouse.y)) {
+                /* Mouse is over button - show hover state */
+                if (button->state == BUTTON_STATE_NORMAL) {
+                    button->state = BUTTON_STATE_HOVER;
+                    view_invalidate(self);
+                }
+            } else {
+                /* Mouse is in region but not over button - clear hover */
+                if (button->state == BUTTON_STATE_HOVER) {
+                    button->state = BUTTON_STATE_NORMAL;
+                    view_invalidate(self);
+                }
+            }
+            return 1;
+            
+        case EVENT_MOUSE_LEAVE:
+            /* Mouse left our region - clear hover state */
             if (button->state != BUTTON_STATE_PRESSED) {
-                button->state = BUTTON_STATE_HOVER;
+                button->state = BUTTON_STATE_NORMAL;
                 view_invalidate(self);
             }
             return 1;
             
         case EVENT_MOUSE_DOWN:
-            /* Press button */
-            button->state = BUTTON_STATE_PRESSED;
-            view_invalidate(self);
-            return 1;
+            /* Press button only if mouse is over actual button */
+            if (button_contains_pixel(button, event->data.mouse.x, event->data.mouse.y)) {
+                button->state = BUTTON_STATE_PRESSED;
+                view_invalidate(self);
+                return 1;
+            }
+            return 0;
             
         case EVENT_MOUSE_UP:
             /* Release button and fire callback if still over button */
             if (button->state == BUTTON_STATE_PRESSED) {
-                button->state = BUTTON_STATE_HOVER;
-                view_invalidate(self);
-                
-                /* Fire callback */
-                if (button->on_click) {
-                    button->on_click(button, button->user_data);
+                if (button_contains_pixel(button, event->data.mouse.x, event->data.mouse.y)) {
+                    button->state = BUTTON_STATE_HOVER;
+                    
+                    /* Fire callback */
+                    if (button->on_click) {
+                        button->on_click(button, button->user_data);
+                    }
+                    
+                    serial_write_string("Button clicked: ");
+                    serial_write_string(button->label);
+                    serial_write_string("\n");
+                } else {
+                    /* Released outside button - cancel click */
+                    button->state = BUTTON_STATE_NORMAL;
                 }
-                
-                serial_write_string("Button clicked: ");
-                serial_write_string(button->label);
-                serial_write_string("\n");
+                view_invalidate(self);
+                return 1;
             }
-            return 1;
+            return 0;
             
         default:
             break;
@@ -203,16 +246,21 @@ Button* button_create(int x, int y, const char *label, FontSize font) {
     button = (Button*)malloc(sizeof(Button));
     if (!button) return NULL;
     
-    /* Calculate dimensions */
+    /* Calculate dimensions in pixels */
     width = calculate_button_width(label, font);
     height = calculate_button_height(font);
     
-    /* Convert pixels to regions (approximate) */
-    /* This is simplified - in practice we'd want pixel-precise positioning */
+    /* Store pixel-precise bounds */
+    button->pixel_x = x * REGION_WIDTH;  /* Convert region position to pixels */
+    button->pixel_y = y * REGION_HEIGHT;
+    button->pixel_width = width;
+    button->pixel_height = height;
+    
+    /* Convert pixels to regions for view system (will be oversized) */
     region_w = (width + REGION_WIDTH - 1) / REGION_WIDTH;
     region_h = (height + REGION_HEIGHT - 1) / REGION_HEIGHT;
     
-    /* Initialize base view */
+    /* Initialize base view with region bounds */
     button->base.bounds.x = x;
     button->base.bounds.y = y;
     button->base.bounds.width = region_w;

@@ -41,6 +41,9 @@ struct Button {
     void *user_data;             /* User data for callback */
     int min_width;               /* Minimum width in pixels */
     int pressed_offset;          /* Offset when pressed for 3D effect */
+    /* Pixel-precise bounds for accurate hit testing */
+    int pixel_x, pixel_y;        /* Actual position in pixels */
+    int pixel_width, pixel_height; /* Actual size in pixels */
 };
 
 /* Button API */

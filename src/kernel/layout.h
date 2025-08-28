@@ -59,6 +59,7 @@ typedef struct Layout {
     /* Active region tracking */
     Region *active_region;
     View *focus_view;  /* Currently focused view */
+    View *hover_view;  /* Currently hovered view for mouse tracking */
     
     /* Root view for the entire layout */
     View *root_view;

@@ -55,6 +55,7 @@ void layout_init(Layout *layout) {
     layout->type = LAYOUT_SINGLE;
     layout->active_region = &layout->regions[0][0];
     layout->focus_view = NULL;
+    layout->hover_view = NULL;
     layout->root_view = view_create(0, 0, 7, 6);  /* Full screen */
     layout->needs_redraw = 1;
     layout->background_color = 0;  /* Black */
@@ -113,6 +114,7 @@ void layout_reset(Layout *layout) {
     layout->type = LAYOUT_SINGLE;
     layout->active_region = &layout->regions[0][0];
     layout->focus_view = NULL;
+    layout->hover_view = NULL;
     layout->needs_redraw = 1;
 }
 
@@ -514,6 +516,7 @@ void layout_invalidate(Layout *layout) {
 /* Handle input event */
 int layout_handle_event(Layout *layout, InputEvent *event) {
     View *target_view = NULL;
+    View *old_hover_view;
     Region *region;
     int handled = 0;
     
@@ -531,6 +534,37 @@ int layout_handle_event(Layout *layout, InputEvent *event) {
             target_view = view_hit_test_pixels(layout->root_view, 
                                               event->data.mouse.x, 
                                               event->data.mouse.y);
+            
+            /* Handle mouse enter/leave for hover states */
+            if (event->type == EVENT_MOUSE_MOVE) {
+                old_hover_view = layout->hover_view;
+                
+                /* Check if we've entered a new view */
+                if (target_view != old_hover_view) {
+                    /* Send mouse leave to old view if it had hover */
+                    if (old_hover_view && old_hover_view->handle_event) {
+                        InputEvent leave_event;
+                        leave_event.type = EVENT_MOUSE_LEAVE;
+                        leave_event.data.mouse.x = event->data.mouse.x;
+                        leave_event.data.mouse.y = event->data.mouse.y;
+                        leave_event.data.mouse.button = event->data.mouse.button;
+                        view_handle_event(old_hover_view, &leave_event);
+                    }
+                    
+                    /* Update hover view */
+                    layout->hover_view = target_view;
+                    
+                    /* Send mouse enter to new view */
+                    if (target_view && target_view->handle_event) {
+                        InputEvent enter_event;
+                        enter_event.type = EVENT_MOUSE_ENTER;
+                        enter_event.data.mouse.x = event->data.mouse.x;
+                        enter_event.data.mouse.y = event->data.mouse.y;
+                        enter_event.data.mouse.button = event->data.mouse.button;
+                        view_handle_event(target_view, &enter_event);
+                    }
+                }
+            }
             
             /* If we found a view and it's a click, update active region */
             if (target_view && event->type == EVENT_MOUSE_DOWN) {

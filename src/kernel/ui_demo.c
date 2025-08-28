@@ -122,38 +122,38 @@ void test_ui_demo(void) {
     panel_set_title(button_panel, "Buttons", FONT_6X8);
     panel_set_border(button_panel, BORDER_RAISED, THEME_BORDER);
     
-    /* Create buttons with different styles */
-    btn_normal = button_create(1, 3, "Normal", FONT_6X8);
+    /* Create buttons with different styles - coordinates relative to parent panel */
+    btn_normal = button_create(0, 1, "Normal", FONT_6X8);
     button_set_callback(btn_normal, on_button_normal, NULL);
     
-    btn_primary = button_create(2, 3, "Primary", FONT_6X8);
+    btn_primary = button_create(1, 1, "Primary", FONT_6X8);
     button_set_style(btn_primary, BUTTON_STYLE_PRIMARY);
     button_set_callback(btn_primary, on_button_primary, NULL);
     
-    btn_danger = button_create(3, 3, "Danger", FONT_6X8);
+    btn_danger = button_create(2, 1, "Danger", FONT_6X8);
     button_set_style(btn_danger, BUTTON_STYLE_DANGER);
     button_set_callback(btn_danger, on_button_danger, NULL);
     
-    btn_disabled = button_create(1, 4, "Disabled", FONT_6X8);
+    btn_disabled = button_create(0, 2, "Disabled", FONT_6X8);
     button_set_enabled(btn_disabled, 0);
     
     /* Create buttons with different fonts */
-    btn_6x8 = button_create(2, 4, "6x8 Font", FONT_6X8);
-    btn_9x16 = button_create(3, 4, "9x16 Font", FONT_9X16);
+    btn_6x8 = button_create(1, 2, "6x8 Font", FONT_6X8);
+    btn_9x16 = button_create(2, 2, "9x16 Font", FONT_9X16);
     
     /* Create label panel */
     label_panel = panel_create(4, 2, 300, 200);
     panel_set_title(label_panel, "Labels", FONT_6X8);
     panel_set_border(label_panel, BORDER_SUNKEN, THEME_BORDER);
     
-    /* Create labels with different alignments */
-    lbl_left = label_create(4, 3, 200, "Left aligned", FONT_6X8);
+    /* Create labels with different alignments - coordinates relative to parent panel */
+    lbl_left = label_create(0, 1, 200, "Left aligned", FONT_6X8);
     label_set_align(lbl_left, ALIGN_LEFT);
     
-    lbl_center = label_create(4, 4, 200, "Center aligned", FONT_6X8);
+    lbl_center = label_create(0, 2, 200, "Center aligned", FONT_6X8);
     label_set_align(lbl_center, ALIGN_CENTER);
     
-    lbl_right = label_create(4, 5, 200, "Right aligned", FONT_6X8);
+    lbl_right = label_create(0, 3, 200, "Right aligned", FONT_6X8);
     label_set_align(lbl_right, ALIGN_RIGHT);
     
     /* Create colored label */
