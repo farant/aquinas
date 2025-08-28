@@ -10,6 +10,102 @@
 int shift_pressed = 0;
 int ctrl_pressed = 0;
 
+/* Get keyboard event with both scancode and ASCII */
+int keyboard_get_key_event(unsigned char *scancode, char *ascii) {
+    unsigned char status;
+    unsigned char keycode;
+    
+    /* Simple scancode to ASCII */
+    static const char scancode_map[128] = {
+        0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
+        '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
+        0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`',
+        0, '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0,
+        '*', 0, ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
+    
+    /* Shifted scancode map */
+    static const char scancode_map_shift[128] = {
+        0, 27, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b',
+        '\t', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n',
+        0, 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~',
+        0, '|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 0,
+        '*', 0, ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
+    
+    /* Check if keyboard data is available */
+    status = inb(0x64);
+    if (!(status & 1) || (status & 0x20)) {
+        return 0;  /* No keyboard data available */
+    }
+    
+    /* Read the keycode */
+    keycode = inb(0x60);
+    
+    /* Return the scancode */
+    if (scancode) {
+        *scancode = keycode;
+    }
+    
+    /* Handle key release (high bit set) */
+    if (keycode & 0x80) {
+        /* Key release */
+        unsigned char released_key = keycode & 0x7F;
+        
+        /* Check for shift release */
+        if (released_key == 0x2A || released_key == 0x36) {
+            shift_pressed = 0;
+        }
+        /* Check for control release */
+        else if (released_key == 0x1D) {
+            ctrl_pressed = 0;
+        }
+        
+        /* Return ASCII as 0 for key release */
+        if (ascii) {
+            *ascii = 0;
+        }
+        return -1;  /* Key release event */
+    }
+    
+    /* Check for shift press */
+    if (keycode == 0x2A || keycode == 0x36) {
+        shift_pressed = 1;
+        if (ascii) *ascii = 0;
+        return 1;
+    }
+    
+    /* Check for control press */
+    if (keycode == 0x1D) {
+        ctrl_pressed = 1;
+        if (ascii) *ascii = 0;
+        return 1;
+    }
+    
+    /* Convert to ASCII if it's a printable key */
+    if (ascii) {
+        if (keycode < 128) {
+            if (shift_pressed) {
+                *ascii = scancode_map_shift[keycode];
+            } else {
+                *ascii = scancode_map[keycode];
+            }
+        } else {
+            *ascii = 0;
+        }
+    }
+    
+    return 1;  /* Key press event */
+}
+
 /* External functions from graphics mode */
 extern int graphics_mode_active;
 extern void handle_graphics_mouse_raw(signed char dx, signed char dy);

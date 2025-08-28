@@ -7,6 +7,7 @@ void poll_mouse(void);
 
 /* Keyboard functions */
 int keyboard_check(void);
+int keyboard_get_key_event(unsigned char *scancode, char *ascii);
 
 /* Key state tracking */
 extern int shift_pressed;

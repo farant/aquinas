@@ -566,10 +566,14 @@ int layout_handle_event(Layout *layout, InputEvent *event) {
                 }
             }
             
-            /* If we found a view and it's a click, update active region */
+            /* If we found a view and it's a click, update active region and focus */
             if (target_view && event->type == EVENT_MOUSE_DOWN) {
-                /* Find which region contains this view for active highlight */
                 int reg_x, reg_y;
+                
+                /* Set focus to the clicked view */
+                layout->focus_view = target_view;
+                
+                /* Find which region contains this view for active highlight */
                 layout_pixels_to_region(layout, event->data.mouse.x, event->data.mouse.y, &reg_x, &reg_y);
                 region = layout_get_region(layout, reg_x, reg_y);
                 if (region) {

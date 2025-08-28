@@ -7,6 +7,7 @@
 #include "ui_button.h"
 #include "ui_label.h"
 #include "ui_panel.h"
+#include "ui_textinput.h"
 #include "ui_theme.h"
 #include "layout.h"
 #include "view.h"
@@ -44,6 +45,19 @@ static void on_button_exit(Button *button, void *user_data) {
     serial_write_string("Exit button clicked - exiting demo\n");
 }
 
+/* Text input callbacks */
+static void on_textinput_change(TextInput *input, void *user_data) {
+    serial_write_string("Text changed: ");
+    serial_write_string(textinput_get_text(input));
+    serial_write_string("\n");
+}
+
+static void on_textinput_submit(TextInput *input, void *user_data) {
+    serial_write_string("Text submitted: ");
+    serial_write_string(textinput_get_text(input));
+    serial_write_string("\n");
+}
+
 /* Mouse event handler */
 static void ui_demo_mouse_handler(InputEvent *event) {
     if (!event || !g_ui_demo_layout) return;
@@ -67,11 +81,12 @@ void test_ui_demo(void) {
     Layout *layout;
     GraphicsContext *gc;
     DisplayDriver *driver;
-    Panel *main_panel, *button_panel, *label_panel;
+    Panel *main_panel, *button_panel, *label_panel, *input_panel;
     Button *btn_normal, *btn_primary, *btn_danger, *btn_disabled;
     Button *btn_6x8, *btn_9x16, *btn_exit;
     Label *lbl_title, *lbl_left, *lbl_center, *lbl_right;
-    Label *lbl_colors;
+    Label *lbl_colors, *lbl_name, *lbl_email;
+    TextInput *txt_name, *txt_email;
     int running = 1;
     int key;
     unsigned int last_update = 0;
@@ -156,8 +171,26 @@ void test_ui_demo(void) {
     lbl_right = label_create(0, 3, 200, "Right aligned", FONT_6X8);
     label_set_align(lbl_right, ALIGN_RIGHT);
     
+    /* Create input panel */
+    input_panel = panel_create(1, 4, 400, 120);
+    panel_set_title(input_panel, "Text Inputs", FONT_6X8);
+    panel_set_border(input_panel, BORDER_SUNKEN, THEME_BORDER);
+    
+    /* Create labels for inputs */
+    lbl_name = label_create(0, 1, 80, "Name:", FONT_6X8);
+    lbl_email = label_create(0, 2, 80, "Email:", FONT_6X8);
+    
+    /* Create text inputs */
+    txt_name = textinput_create(1, 1, 30, "Enter your name", FONT_6X8);
+    textinput_set_on_change(txt_name, on_textinput_change, NULL);
+    textinput_set_on_submit(txt_name, on_textinput_submit, NULL);
+    
+    txt_email = textinput_create(1, 2, 30, "user@example.com", FONT_6X8);
+    textinput_set_on_change(txt_email, on_textinput_change, NULL);
+    textinput_set_on_submit(txt_email, on_textinput_submit, NULL);
+    
     /* Create colored label */
-    lbl_colors = label_create(1, 5, 400, "Cyan on dark gray background", FONT_9X16);
+    lbl_colors = label_create(5, 4, 200, "Cyan on dark gray", FONT_9X16);
     label_set_colors(lbl_colors, COLOR_BRIGHT_CYAN, COLOR_DARK_GRAY);
     
     /* Create exit button */
@@ -170,6 +203,7 @@ void test_ui_demo(void) {
     view_add_child((View*)main_panel, (View*)lbl_title);
     view_add_child((View*)main_panel, (View*)button_panel);
     view_add_child((View*)main_panel, (View*)label_panel);
+    view_add_child((View*)main_panel, (View*)input_panel);
     view_add_child((View*)button_panel, (View*)btn_normal);
     view_add_child((View*)button_panel, (View*)btn_primary);
     view_add_child((View*)button_panel, (View*)btn_danger);
@@ -179,6 +213,10 @@ void test_ui_demo(void) {
     view_add_child((View*)label_panel, (View*)lbl_left);
     view_add_child((View*)label_panel, (View*)lbl_center);
     view_add_child((View*)label_panel, (View*)lbl_right);
+    view_add_child((View*)input_panel, (View*)lbl_name);
+    view_add_child((View*)input_panel, (View*)lbl_email);
+    view_add_child((View*)input_panel, (View*)txt_name);
+    view_add_child((View*)input_panel, (View*)txt_email);
     view_add_child((View*)main_panel, (View*)lbl_colors);
     view_add_child((View*)main_panel, (View*)btn_exit);
     
@@ -209,11 +247,29 @@ void test_ui_demo(void) {
         /* Poll mouse */
         mouse_poll();
         
-        /* Check keyboard */
-        key = keyboard_check();
-        if (key == 27) {  /* ESC */
-            running = 0;
-            serial_write_string("ESC pressed, exiting UI demo\n");
+        /* Check keyboard and generate events */
+        {
+            unsigned char scancode;
+            char ascii;
+            int key_result = keyboard_get_key_event(&scancode, &ascii);
+            
+            if (key_result > 0) {  /* Key press event */
+                InputEvent kbd_event;
+                kbd_event.type = EVENT_KEY_DOWN;
+                kbd_event.data.keyboard.key = scancode;
+                kbd_event.data.keyboard.ascii = ascii;
+                kbd_event.data.keyboard.shift = shift_pressed;
+                kbd_event.data.keyboard.ctrl = ctrl_pressed;
+                
+                /* Send to layout which will route to focused view */
+                layout_handle_event(layout, &kbd_event);
+                
+                /* Check for ESC to exit */
+                if (scancode == 0x01) {  /* ESC scancode */
+                    running = 0;
+                    serial_write_string("ESC pressed, exiting UI demo\n");
+                }
+            }
         }
         
         /* Redraw if needed */
@@ -233,6 +289,10 @@ void test_ui_demo(void) {
     /* Destroy components */
     button_destroy(btn_exit);
     label_destroy(lbl_colors);
+    textinput_destroy(txt_email);
+    textinput_destroy(txt_name);
+    label_destroy(lbl_email);
+    label_destroy(lbl_name);
     label_destroy(lbl_right);
     label_destroy(lbl_center);
     label_destroy(lbl_left);
@@ -243,6 +303,7 @@ void test_ui_demo(void) {
     button_destroy(btn_primary);
     button_destroy(btn_normal);
     label_destroy(lbl_title);
+    panel_destroy(input_panel);
     panel_destroy(label_panel);
     panel_destroy(button_panel);
     panel_destroy(main_panel);

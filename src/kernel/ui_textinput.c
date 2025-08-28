@@ -1,0 +1,582 @@
+/* Text Input Component Implementation */
+
+#include "ui_textinput.h"
+#include "graphics_context.h"
+#include "grid.h"
+#include "dispi.h"
+#include "memory.h"
+#include "serial.h"
+
+#define CURSOR_BLINK_RATE 500  /* Milliseconds */
+#define DEFAULT_BUFFER_SIZE 256
+
+/* Calculate text input width in pixels */
+static int calculate_input_width(int width) {
+    /* Width is given in approximate characters, convert to pixels */
+    return width * 6 + PADDING_MEDIUM * 2;
+}
+
+/* Calculate text input height based on font */
+static int calculate_input_height(FontSize font) {
+    int char_height = (font == FONT_9X16) ? 16 : 8;
+    return char_height + PADDING_MEDIUM * 2;
+}
+
+/* Draw cursor at current position */
+static void draw_cursor(TextInput *input, GraphicsContext *gc, int x, int y) {
+    int char_width = (input->font == FONT_9X16) ? 9 : 6;
+    int char_height = (input->font == FONT_9X16) ? 16 : 8;
+    int cursor_x, cursor_y;
+    int visible_text_start = input->scroll_offset;
+    int cursor_offset;
+    char cursor_char;
+    
+    /* Calculate cursor position */
+    cursor_offset = input->cursor_pos - visible_text_start;
+    if (cursor_offset < 0) return; /* Cursor is scrolled off left */
+    
+    cursor_x = x + PADDING_SMALL + cursor_offset * char_width;
+    cursor_y = y + PADDING_SMALL + 2;  /* Adjusted down by 2 pixels */
+    
+    if (input->cursor_visible) {
+        /* Option 1: Background highlight (like vim/terminal) */
+        /* Draw filled rectangle behind the character at cursor position */
+        gc_fill_rect(gc, cursor_x, cursor_y, char_width, char_height, COLOR_MED_GOLD);
+        
+        /* Redraw the character at cursor position in inverted color if there is one */
+        if (input->cursor_pos < input->text_length) {
+            cursor_char = input->buffer[input->cursor_pos];
+            /* Use dispi_draw_char with inverted colors */
+            dispi_draw_char(cursor_x, cursor_y, cursor_char, COLOR_BLACK, COLOR_MED_GOLD);
+        }
+        
+        /* Option 2: Underscore cursor (uncomment to use this instead) */
+        /*
+        gc_draw_line(gc, cursor_x, cursor_y + char_height - 1, 
+                     cursor_x + char_width - 1, cursor_y + char_height - 1, COLOR_BLACK);
+        gc_draw_line(gc, cursor_x, cursor_y + char_height - 2, 
+                     cursor_x + char_width - 1, cursor_y + char_height - 2, COLOR_BLACK);
+        */
+    }
+}
+
+/* Draw text input */
+void textinput_draw(View *self, GraphicsContext *gc) {
+    TextInput *input = (TextInput*)self;
+    RegionRect abs_bounds;
+    int x, y, w, h;
+    unsigned char bg_color, fg_color, border_color;
+    int char_width, char_height;
+    int text_x, text_y;
+    const char *display_text;
+    char visible_buffer[80];  /* Temporary buffer for visible portion */
+    int max_visible_chars;
+    int visible_start, visible_len;
+    int i;
+    
+    /* Get absolute position from parent hierarchy */
+    view_get_absolute_bounds(self, &abs_bounds);
+    grid_region_to_pixel(abs_bounds.x, abs_bounds.y, &x, &y);
+    
+    /* Use actual input pixel dimensions */
+    w = input->pixel_width;
+    h = input->pixel_height;
+    
+    /* Determine colors based on state */
+    switch (input->state) {
+        case TEXTINPUT_STATE_DISABLED:
+            bg_color = THEME_BG;
+            fg_color = COLOR_MED_DARK_GRAY;
+            border_color = COLOR_MED_DARK_GRAY;
+            break;
+            
+        case TEXTINPUT_STATE_FOCUSED:
+            bg_color = COLOR_WHITE;
+            fg_color = COLOR_BLACK;
+            border_color = COLOR_MED_CYAN;  /* Highlight when focused */
+            break;
+            
+        case TEXTINPUT_STATE_NORMAL:
+        default:
+            bg_color = COLOR_WHITE;
+            fg_color = COLOR_BLACK;
+            border_color = COLOR_MED_DARK_GRAY;
+            break;
+    }
+    
+    /* Fill background */
+    gc_fill_rect(gc, x, y, w, h, bg_color);
+    
+    /* Draw border (sunken effect for input field) */
+    gc_draw_line(gc, x, y, x + w - 1, y, COLOR_DARK_GRAY);       /* Top */
+    gc_draw_line(gc, x, y, x, y + h - 1, COLOR_DARK_GRAY);       /* Left */
+    gc_draw_line(gc, x + w - 1, y + 1, x + w - 1, y + h - 1, COLOR_WHITE);  /* Right */
+    gc_draw_line(gc, x + 1, y + h - 1, x + w - 1, y + h - 1, COLOR_WHITE);  /* Bottom */
+    
+    /* Draw focus highlight if focused */
+    if (input->state == TEXTINPUT_STATE_FOCUSED) {
+        gc_draw_rect(gc, x - 1, y - 1, w + 1, h + 1, border_color);
+    }
+    
+    /* Calculate text dimensions */
+    char_width = (input->font == FONT_9X16) ? 9 : 6;
+    char_height = (input->font == FONT_9X16) ? 16 : 8;
+    
+    /* Calculate visible text area */
+    max_visible_chars = (w - PADDING_MEDIUM * 2) / char_width;
+    
+    /* Determine what text to display */
+    if (input->text_length == 0 && input->placeholder && 
+        input->state != TEXTINPUT_STATE_FOCUSED) {
+        /* Show placeholder */
+        display_text = input->placeholder;
+        fg_color = COLOR_MED_DARK_GRAY;
+        visible_start = 0;
+        visible_len = 0;
+        while (display_text[visible_len] && visible_len < max_visible_chars) {
+            visible_len++;
+        }
+    } else {
+        /* Show actual text with scrolling */
+        visible_start = input->scroll_offset;
+        visible_len = input->text_length - visible_start;
+        if (visible_len > max_visible_chars) {
+            visible_len = max_visible_chars;
+        }
+        
+        /* Copy visible portion to temporary buffer */
+        for (i = 0; i < visible_len; i++) {
+            visible_buffer[i] = input->buffer[visible_start + i];
+        }
+        visible_buffer[visible_len] = '\0';
+        display_text = visible_buffer;
+    }
+    
+    /* Draw text */
+    text_x = x + PADDING_SMALL;
+    text_y = y + (h - char_height) / 2;
+    
+    if (input->font == FONT_9X16) {
+        dispi_draw_string_bios(text_x, text_y, display_text, fg_color, bg_color);
+    } else {
+        dispi_draw_string(text_x, text_y, display_text, fg_color, bg_color);
+    }
+    
+    /* Draw cursor if focused */
+    if (input->state == TEXTINPUT_STATE_FOCUSED && input->text_length > 0) {
+        draw_cursor(input, gc, x, y);
+    } else if (input->state == TEXTINPUT_STATE_FOCUSED && input->text_length == 0) {
+        /* Draw cursor at start when empty - use same style as draw_cursor */
+        if (input->cursor_visible) {
+            /* Background highlight style for empty field */
+            gc_fill_rect(gc, text_x, text_y + 2, char_width, char_height, COLOR_MED_GOLD);
+            
+            /* Underscore style (uncomment to use this instead) */
+            /*
+            gc_draw_line(gc, text_x, text_y + char_height - 1, 
+                         text_x + char_width - 1, text_y + char_height - 1, COLOR_BLACK);
+            gc_draw_line(gc, text_x, text_y + char_height - 2, 
+                         text_x + char_width - 1, text_y + char_height - 2, COLOR_BLACK);
+            */
+        }
+    }
+}
+
+/* Update text input (for cursor blinking) */
+void textinput_update(View *self, int delta_ms) {
+    TextInput *input = (TextInput*)self;
+    
+    if (input->state == TEXTINPUT_STATE_FOCUSED) {
+        /* Track time since last typing */
+        input->last_typing_time += delta_ms;
+        
+        /* Only blink cursor if we haven't typed recently (500ms threshold) */
+        if (input->last_typing_time > 500) {
+            input->cursor_blink_time += delta_ms;
+            if (input->cursor_blink_time >= CURSOR_BLINK_RATE) {
+                input->cursor_visible = !input->cursor_visible;
+                input->cursor_blink_time = 0;
+                view_invalidate(self);
+            }
+        } else {
+            /* Keep cursor solid while typing */
+            if (!input->cursor_visible) {
+                input->cursor_visible = 1;
+                view_invalidate(self);
+            }
+        }
+    }
+}
+
+/* Insert character at cursor position */
+static void insert_char(TextInput *input, char c) {
+    int i;
+    
+    if (input->text_length >= input->buffer_size - 1) {
+        return; /* Buffer full */
+    }
+    
+    /* Shift text right from cursor position */
+    for (i = input->text_length; i > input->cursor_pos; i--) {
+        input->buffer[i] = input->buffer[i - 1];
+    }
+    
+    /* Insert character */
+    input->buffer[input->cursor_pos] = c;
+    input->text_length++;
+    input->cursor_pos++;
+    input->buffer[input->text_length] = '\0';
+    
+    /* Reset typing timer for solid cursor */
+    input->last_typing_time = 0;
+    input->cursor_visible = 1;
+    
+    /* Adjust scroll if needed */
+    if (input->cursor_pos > input->scroll_offset + 20) {
+        input->scroll_offset = input->cursor_pos - 20;
+    }
+    
+    /* Fire change callback */
+    if (input->on_change) {
+        input->on_change(input, input->user_data);
+    }
+    
+    view_invalidate((View*)input);
+}
+
+/* Delete character at cursor position */
+static void delete_char(TextInput *input) {
+    int i;
+    
+    if (input->cursor_pos >= input->text_length) {
+        return; /* Nothing to delete */
+    }
+    
+    /* Shift text left */
+    for (i = input->cursor_pos; i < input->text_length - 1; i++) {
+        input->buffer[i] = input->buffer[i + 1];
+    }
+    
+    input->text_length--;
+    input->buffer[input->text_length] = '\0';
+    
+    /* Reset typing timer for solid cursor */
+    input->last_typing_time = 0;
+    input->cursor_visible = 1;
+    
+    /* Fire change callback */
+    if (input->on_change) {
+        input->on_change(input, input->user_data);
+    }
+    
+    view_invalidate((View*)input);
+}
+
+/* Delete character before cursor (backspace) */
+static void backspace_char(TextInput *input) {
+    if (input->cursor_pos == 0) {
+        return; /* Nothing to delete */
+    }
+    
+    input->cursor_pos--;
+    delete_char(input);
+    
+    /* Reset typing timer for solid cursor (delete_char already does this but be explicit) */
+    input->last_typing_time = 0;
+    input->cursor_visible = 1;
+    
+    /* Adjust scroll if needed */
+    if (input->cursor_pos < input->scroll_offset) {
+        input->scroll_offset = input->cursor_pos;
+    }
+}
+
+/* Handle text input events */
+int textinput_handle_event(View *self, InputEvent *event) {
+    TextInput *input = (TextInput*)self;
+    int char_width;
+    
+    if (input->state == TEXTINPUT_STATE_DISABLED) {
+        return 0;
+    }
+    
+    switch (event->type) {
+        case EVENT_MOUSE_DOWN:
+            /* Focus on click */
+            if (input->state != TEXTINPUT_STATE_FOCUSED) {
+                textinput_set_focused(input, 1);
+                
+                /* Find parent layout and set focus */
+                {
+                    View *root = view_get_root(self);
+                    if (root && root->parent == NULL) {
+                        /* This is the layout's root view, find the layout */
+                        /* For now, we'll need to pass layout to components or find another way */
+                        /* TODO: Better focus management */
+                    }
+                }
+            }
+            
+            /* Position cursor at click location */
+            char_width = (input->font == FONT_9X16) ? 9 : 6;
+            /* TODO: Calculate cursor position from mouse x */
+            
+            return 1;
+            
+        case EVENT_KEY_DOWN:
+            if (input->state != TEXTINPUT_STATE_FOCUSED) {
+                return 0;
+            }
+            
+            /* Handle special keys */
+            switch (event->data.keyboard.key) {
+                case 0x0E:  /* Backspace */
+                    backspace_char(input);
+                    return 1;
+                    
+                case 0x1C:  /* Enter */
+                    if (input->on_submit) {
+                        input->on_submit(input, input->user_data);
+                    }
+                    return 1;
+                    
+                case 0x4B:  /* Left arrow */
+                    if (input->cursor_pos > 0) {
+                        input->cursor_pos--;
+                        if (input->cursor_pos < input->scroll_offset) {
+                            input->scroll_offset = input->cursor_pos;
+                        }
+                        view_invalidate(self);
+                    }
+                    return 1;
+                    
+                case 0x4D:  /* Right arrow */
+                    if (input->cursor_pos < input->text_length) {
+                        input->cursor_pos++;
+                        if (input->cursor_pos > input->scroll_offset + 20) {
+                            input->scroll_offset = input->cursor_pos - 20;
+                        }
+                        view_invalidate(self);
+                    }
+                    return 1;
+                    
+                case 0x47:  /* Home */
+                    input->cursor_pos = 0;
+                    input->scroll_offset = 0;
+                    view_invalidate(self);
+                    return 1;
+                    
+                case 0x4F:  /* End */
+                    input->cursor_pos = input->text_length;
+                    if (input->cursor_pos > 20) {
+                        input->scroll_offset = input->cursor_pos - 20;
+                    } else {
+                        input->scroll_offset = 0;
+                    }
+                    view_invalidate(self);
+                    return 1;
+                    
+                case 0x53:  /* Delete */
+                    delete_char(input);
+                    return 1;
+                    
+                default:
+                    /* Insert printable character */
+                    if (event->data.keyboard.ascii >= 32 && 
+                        event->data.keyboard.ascii < 127) {
+                        insert_char(input, event->data.keyboard.ascii);
+                        return 1;
+                    }
+                    break;
+            }
+            break;
+            
+        default:
+            break;
+    }
+    
+    return 0;
+}
+
+/* Create a text input */
+TextInput* textinput_create(int x, int y, int width, const char *placeholder, FontSize font) {
+    TextInput *input;
+    int pixel_width, pixel_height;
+    int region_w, region_h;
+    
+    input = (TextInput*)malloc(sizeof(TextInput));
+    if (!input) return NULL;
+    
+    /* Allocate text buffer */
+    input->buffer = (char*)malloc(DEFAULT_BUFFER_SIZE);
+    if (!input->buffer) {
+        free(input);
+        return NULL;
+    }
+    
+    /* Calculate dimensions in pixels */
+    pixel_width = calculate_input_width(width);
+    pixel_height = calculate_input_height(font);
+    
+    /* Store pixel-precise bounds */
+    input->pixel_x = x * REGION_WIDTH;
+    input->pixel_y = y * REGION_HEIGHT;
+    input->pixel_width = pixel_width;
+    input->pixel_height = pixel_height;
+    
+    /* Convert to regions for view system */
+    region_w = (pixel_width + REGION_WIDTH - 1) / REGION_WIDTH;
+    region_h = (pixel_height + REGION_HEIGHT - 1) / REGION_HEIGHT;
+    
+    /* Initialize base view */
+    input->base.bounds.x = x;
+    input->base.bounds.y = y;
+    input->base.bounds.width = region_w;
+    input->base.bounds.height = region_h;
+    input->base.parent = NULL;
+    input->base.children = NULL;
+    input->base.next_sibling = NULL;
+    input->base.visible = 1;
+    input->base.needs_redraw = 1;
+    input->base.z_order = 0;
+    input->base.user_data = NULL;
+    input->base.draw = textinput_draw;
+    input->base.update = textinput_update;
+    input->base.handle_event = textinput_handle_event;
+    input->base.destroy = NULL;
+    input->base.type_name = "TextInput";
+    
+    /* Initialize text buffer */
+    input->buffer[0] = '\0';
+    input->buffer_size = DEFAULT_BUFFER_SIZE;
+    input->text_length = 0;
+    
+    /* Initialize cursor and selection */
+    input->cursor_pos = 0;
+    input->selection_start = -1;
+    input->selection_end = -1;
+    input->cursor_blink_time = 0;
+    input->cursor_visible = 1;
+    input->last_typing_time = 0;
+    
+    /* Initialize display */
+    input->scroll_offset = 0;
+    input->placeholder = placeholder;
+    input->font = font;
+    
+    /* Initialize state */
+    input->state = TEXTINPUT_STATE_NORMAL;
+    
+    /* Initialize callbacks */
+    input->on_change = NULL;
+    input->on_submit = NULL;
+    input->user_data = NULL;
+    
+    return input;
+}
+
+/* Destroy text input */
+void textinput_destroy(TextInput *input) {
+    if (input) {
+        if (input->buffer) {
+            free(input->buffer);
+        }
+        free(input);
+    }
+}
+
+/* Set text content */
+void textinput_set_text(TextInput *input, const char *text) {
+    int len = 0;
+    
+    if (!input || !text) return;
+    
+    /* Copy text to buffer */
+    while (text[len] && len < input->buffer_size - 1) {
+        input->buffer[len] = text[len];
+        len++;
+    }
+    input->buffer[len] = '\0';
+    input->text_length = len;
+    
+    /* Reset cursor to end */
+    input->cursor_pos = len;
+    input->scroll_offset = 0;
+    
+    /* Fire change callback */
+    if (input->on_change) {
+        input->on_change(input, input->user_data);
+    }
+    
+    view_invalidate((View*)input);
+}
+
+/* Get text content */
+const char* textinput_get_text(TextInput *input) {
+    return input ? input->buffer : "";
+}
+
+/* Clear text */
+void textinput_clear(TextInput *input) {
+    if (!input) return;
+    
+    input->buffer[0] = '\0';
+    input->text_length = 0;
+    input->cursor_pos = 0;
+    input->scroll_offset = 0;
+    
+    /* Fire change callback */
+    if (input->on_change) {
+        input->on_change(input, input->user_data);
+    }
+    
+    view_invalidate((View*)input);
+}
+
+/* Set focus state */
+void textinput_set_focused(TextInput *input, int focused) {
+    if (!input) return;
+    
+    if (focused && input->state != TEXTINPUT_STATE_DISABLED) {
+        input->state = TEXTINPUT_STATE_FOCUSED;
+        input->cursor_visible = 1;
+        input->cursor_blink_time = 0;
+    } else if (!focused && input->state == TEXTINPUT_STATE_FOCUSED) {
+        input->state = TEXTINPUT_STATE_NORMAL;
+    }
+    
+    view_invalidate((View*)input);
+}
+
+/* Set enabled state */
+void textinput_set_enabled(TextInput *input, int enabled) {
+    if (!input) return;
+    
+    if (enabled && input->state == TEXTINPUT_STATE_DISABLED) {
+        input->state = TEXTINPUT_STATE_NORMAL;
+    } else if (!enabled) {
+        input->state = TEXTINPUT_STATE_DISABLED;
+    }
+    
+    view_invalidate((View*)input);
+}
+
+/* Set change callback */
+void textinput_set_on_change(TextInput *input, 
+                             void (*on_change)(TextInput*, void*), 
+                             void *user_data) {
+    if (!input) return;
+    
+    input->on_change = on_change;
+    input->user_data = user_data;
+}
+
+/* Set submit callback */
+void textinput_set_on_submit(TextInput *input,
+                             void (*on_submit)(TextInput*, void*),
+                             void *user_data) {
+    if (!input) return;
+    
+    input->on_submit = on_submit;
+    input->user_data = user_data;
+}

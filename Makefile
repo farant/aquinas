@@ -24,7 +24,7 @@ KERNEL_C_SRCS = $(KERNEL_DIR)/kernel.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/vga.
 # Build files
 BOOT_BIN = $(BUILD_DIR)/boot.bin
 KERNEL_ENTRY_OBJ = $(BUILD_DIR)/kernel_entry.o
-KERNEL_C_OBJS = $(BUILD_DIR)/kernel.o $(BUILD_DIR)/serial.o $(BUILD_DIR)/vga.o $(BUILD_DIR)/timer.o $(BUILD_DIR)/rtc.o $(BUILD_DIR)/memory.o $(BUILD_DIR)/graphics.o $(BUILD_DIR)/dispi.o $(BUILD_DIR)/display_driver.o $(BUILD_DIR)/pci.o $(BUILD_DIR)/dispi_cursor.o $(BUILD_DIR)/grid.o $(BUILD_DIR)/graphics_context.o $(BUILD_DIR)/page.o $(BUILD_DIR)/modes.o $(BUILD_DIR)/display.o $(BUILD_DIR)/commands.o $(BUILD_DIR)/editor.o $(BUILD_DIR)/input.o $(BUILD_DIR)/mouse.o $(BUILD_DIR)/dispi_init.o $(BUILD_DIR)/dispi_demo.o $(BUILD_DIR)/view.o $(BUILD_DIR)/layout.o $(BUILD_DIR)/layout_demo.o $(BUILD_DIR)/ui_button.o $(BUILD_DIR)/ui_label.o $(BUILD_DIR)/ui_panel.o $(BUILD_DIR)/ui_demo.o
+KERNEL_C_OBJS = $(BUILD_DIR)/kernel.o $(BUILD_DIR)/serial.o $(BUILD_DIR)/vga.o $(BUILD_DIR)/timer.o $(BUILD_DIR)/rtc.o $(BUILD_DIR)/memory.o $(BUILD_DIR)/graphics.o $(BUILD_DIR)/dispi.o $(BUILD_DIR)/display_driver.o $(BUILD_DIR)/pci.o $(BUILD_DIR)/dispi_cursor.o $(BUILD_DIR)/grid.o $(BUILD_DIR)/graphics_context.o $(BUILD_DIR)/page.o $(BUILD_DIR)/modes.o $(BUILD_DIR)/display.o $(BUILD_DIR)/commands.o $(BUILD_DIR)/editor.o $(BUILD_DIR)/input.o $(BUILD_DIR)/mouse.o $(BUILD_DIR)/dispi_init.o $(BUILD_DIR)/dispi_demo.o $(BUILD_DIR)/view.o $(BUILD_DIR)/layout.o $(BUILD_DIR)/layout_demo.o $(BUILD_DIR)/ui_button.o $(BUILD_DIR)/ui_label.o $(BUILD_DIR)/ui_panel.o $(BUILD_DIR)/ui_textinput.o $(BUILD_DIR)/ui_demo.o
 TIMER_ASM_OBJ = $(BUILD_DIR)/timer_asm.o
 KERNEL_BIN = $(BUILD_DIR)/kernel.bin
 OS_IMG = $(BUILD_DIR)/aquinas.img
