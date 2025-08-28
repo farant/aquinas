@@ -9,6 +9,7 @@
 #include "memory.h"
 #include "serial.h"
 #include "display_driver.h"
+#include "view_interface.h"
 
 /* Create a new layout */
 Layout* layout_create(void) {
@@ -210,10 +211,30 @@ Region* layout_get_region(Layout *layout, int x, int y) {
     return &layout->regions[y][x];
 }
 
+/* Helper function to reinitialize a view tree with proper ViewContext */
+static void reinit_view_tree_with_context(View *view, ViewContext *context) {
+    View *child;
+    
+    if (!view || !context) return;
+    
+    /* Reinitialize this view if it has an interface */
+    if (view->interface && view->interface->init) {
+        view->interface->init(view, context);
+    }
+    
+    /* Recursively reinitialize children */
+    child = view->children;
+    while (child) {
+        reinit_view_tree_with_context(child, context);
+        child = child->next_sibling;
+    }
+}
+
 /* Set content for a region area */
 void layout_set_region_content(Layout *layout, int x, int y, int width, int height, View *content) {
     Region *region;
     int row, col;
+    ViewContext context;
     
     if (!layout || x < 0 || x + width > 7 || y < 0 || y + height > 6) {
         return;
@@ -234,6 +255,13 @@ void layout_set_region_content(Layout *layout, int x, int y, int width, int heig
     if (content) {
         view_set_bounds(content, x, y, width, height);
         view_add_child(layout->root_view, content);
+        
+        /* Reinitialize the view tree with proper context including event bus */
+        context.layout = layout;
+        context.event_bus = layout->event_bus;
+        context.resources = NULL;  /* Not implemented yet */
+        context.theme = NULL;      /* Not implemented yet */
+        reinit_view_tree_with_context(content, &context);
     }
     
     /* Mark other regions in the area as occupied */

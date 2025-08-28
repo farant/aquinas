@@ -22,6 +22,9 @@ typedef struct TextInput {
     View base;                    /* Inherit from View */
     TextEditBase edit_base;       /* Shared text editing functionality */
     
+    /* Event bus reference for subscription management */
+    struct EventBus *event_bus;   /* Pointer to event bus for subscribing */
+    
     /* Text buffer */
     char *buffer;                 /* Text buffer */
     int buffer_size;              /* Maximum buffer size */

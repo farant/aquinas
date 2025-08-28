@@ -8,6 +8,7 @@
 #include "dispi.h"
 #include "memory.h"
 #include "serial.h"
+#include "event_bus.h"
 
 #define CURSOR_BLINK_RATE 500  /* Milliseconds */
 #define DEFAULT_BUFFER_SIZE 256
@@ -337,7 +338,109 @@ static void backspace_char(TextInput *input) {
     adjust_scroll(input);
 }
 
-/* Handle text input events */
+/* Event bus handler for keyboard events */
+static int textinput_keyboard_handler(View *view, InputEvent *event, void *context) {
+    TextInput *input = (TextInput*)context;
+    
+    if (!input || !event || event->type != EVENT_KEY_DOWN) {
+        return 0;
+    }
+    
+    /* Only handle if we have focus */
+    if (!input->edit_base.has_focus) {
+        return 0;
+    }
+    
+    serial_write_string("TextInput: Handling keyboard event via event bus\n");
+    
+    /* Handle special keys */
+    switch (event->data.keyboard.key) {
+        case 0x0E:  /* Backspace */
+            backspace_char(input);
+            return 1;
+            
+        case 0x1C:  /* Enter */
+            if (input->on_submit) {
+                input->on_submit(input, input->user_data);
+            }
+            return 1;
+            
+        case 0x4B:  /* Left arrow */
+            if (input->cursor_pos > 0) {
+                input->cursor_pos--;
+                adjust_scroll(input);
+                view_invalidate((View*)input);
+            }
+            return 1;
+            
+        case 0x4D:  /* Right arrow */
+            if (input->cursor_pos < input->text_length) {
+                input->cursor_pos++;
+                adjust_scroll(input);
+                view_invalidate((View*)input);
+            }
+            return 1;
+            
+        case 0x47:  /* Home */
+            input->cursor_pos = 0;
+            adjust_scroll(input);
+            view_invalidate((View*)input);
+            return 1;
+            
+        case 0x4F:  /* End */
+            input->cursor_pos = input->text_length;
+            adjust_scroll(input);
+            view_invalidate((View*)input);
+            return 1;
+            
+        case 0x53:  /* Delete */
+            delete_char(input);
+            adjust_scroll(input);
+            return 1;
+            
+        default:
+            /* Insert printable character */
+            if (event->data.keyboard.ascii >= 32 && 
+                event->data.keyboard.ascii < 127) {
+                insert_char(input, event->data.keyboard.ascii);
+                return 1;
+            }
+            break;
+    }
+    
+    return 0;
+}
+
+/* Event bus handler for mouse events */
+static int textinput_mouse_handler(View *view, InputEvent *event, void *context) {
+    TextInput *input = (TextInput*)context;
+    int char_width;
+    
+    if (!input || !event) {
+        return 0;
+    }
+    
+    if (event->type == EVENT_MOUSE_DOWN) {
+        /* Check if click is within our bounds */
+        if (text_edit_base_hit_test((View*)input, event->data.mouse.x, event->data.mouse.y)) {
+            /* Focus on click */
+            if (!input->edit_base.has_focus) {
+                textinput_set_focused(input, 1);
+            }
+            
+            /* Position cursor at click location */
+            char_width = (input->edit_base.font == FONT_9X16) ? 9 : 6;
+            /* TODO: Calculate cursor position from mouse x */
+            
+            serial_write_string("TextInput: Handling mouse click via event bus\n");
+            return 1;
+        }
+    }
+    
+    return 0;
+}
+
+/* Handle text input events (legacy - kept for compatibility) */
 int textinput_handle_event(View *self, InputEvent *event) {
     TextInput *input = (TextInput*)self;
     int char_width;
@@ -441,9 +544,16 @@ int textinput_handle_event(View *self, InputEvent *event) {
 
 static void textinput_interface_init(View *view, ViewContext *context) {
     TextInput *input = (TextInput*)view;
-    (void)context;  /* Unused for now */
     
     serial_write_string("TextInput: Interface init called\n");
+    
+    /* Store event bus reference if available */
+    if (context && context->event_bus) {
+        input->event_bus = context->event_bus;
+        serial_write_string("TextInput: Event bus stored for future subscription\n");
+    } else {
+        input->event_bus = NULL;
+    }
     
     /* Initialize shared text editing base if not already done */
     text_edit_base_init(&input->edit_base);
@@ -453,6 +563,13 @@ static void textinput_interface_destroy(View *view) {
     TextInput *input = (TextInput*)view;
     
     serial_write_string("TextInput: Interface destroy called\n");
+    
+    /* Unsubscribe from event bus if we have focus */
+    if (input->event_bus && input->edit_base.has_focus) {
+        event_bus_unsubscribe(input->event_bus, view, EVENT_KEY_DOWN);
+        event_bus_unsubscribe(input->event_bus, view, EVENT_MOUSE_DOWN);
+        serial_write_string("TextInput: Unsubscribed from event bus on destroy\n");
+    }
     
     /* Free text buffer */
     if (input->buffer) {
@@ -466,6 +583,19 @@ static void textinput_interface_on_focus_gained(View *view) {
     
     serial_write_string("TextInput: Got focus via interface!\n");
     
+    /* Subscribe to event bus for keyboard and mouse events */
+    if (input->event_bus) {
+        /* Subscribe keyboard at NORMAL priority to allow system shortcuts first */
+        event_bus_subscribe(input->event_bus, view, EVENT_KEY_DOWN, 
+                          EVENT_PRIORITY_NORMAL, textinput_keyboard_handler, input);
+        
+        /* Subscribe mouse at NORMAL priority */
+        event_bus_subscribe(input->event_bus, view, EVENT_MOUSE_DOWN,
+                          EVENT_PRIORITY_NORMAL, textinput_mouse_handler, input);
+        
+        serial_write_string("TextInput: Subscribed to event bus for keyboard and mouse\n");
+    }
+    
     /* Update focus state using shared base */
     text_edit_base_set_focus(&input->edit_base, view, 1);
     
@@ -477,6 +607,13 @@ static void textinput_interface_on_focus_lost(View *view) {
     TextInput *input = (TextInput*)view;
     
     serial_write_string("TextInput: Lost focus via interface!\n");
+    
+    /* Unsubscribe from event bus */
+    if (input->event_bus) {
+        event_bus_unsubscribe(input->event_bus, view, EVENT_KEY_DOWN);
+        event_bus_unsubscribe(input->event_bus, view, EVENT_MOUSE_DOWN);
+        serial_write_string("TextInput: Unsubscribed from event bus\n");
+    }
     
     /* Update focus state using shared base */
     text_edit_base_set_focus(&input->edit_base, view, 0);

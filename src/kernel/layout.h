@@ -47,6 +47,8 @@ typedef struct Bar {
 } Bar;
 
 /* Layout - manages the overall screen layout */
+#ifndef LAYOUT_TYPEDEF
+#define LAYOUT_TYPEDEF
 typedef struct Layout {
     /* Screen is divided into 7x6 regions */
     Region regions[6][7];  /* [row][col] */
@@ -72,6 +74,7 @@ typedef struct Layout {
     /* Event bus for decoupled event handling */
     EventBus *event_bus;
 } Layout;
+#endif
 
 /* Layout initialization and configuration */
 Layout* layout_create(void);

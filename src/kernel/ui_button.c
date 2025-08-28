@@ -7,6 +7,7 @@
 #include "dispi.h"
 #include "memory.h"
 #include "serial.h"
+#include "event_bus.h"
 
 /* Forward declarations for interface callbacks */
 static void button_interface_init(View *view, ViewContext *context);
@@ -193,7 +194,69 @@ static int button_contains_pixel(Button *button, int pixel_x, int pixel_y) {
             pixel_y >= abs_y && pixel_y < abs_y + button->pixel_height);
 }
 
-/* Handle button events */
+/* Event bus handler for mouse events */
+static int button_mouse_handler(View *view, InputEvent *event, void *context) {
+    Button *button = (Button*)context;
+    
+    if (!button || !event || button->state == BUTTON_STATE_DISABLED) {
+        return 0;
+    }
+    
+    switch (event->type) {
+        case EVENT_MOUSE_MOVE:
+            /* Check if mouse is over button to update hover state */
+            if (button_contains_pixel(button, event->data.mouse.x, event->data.mouse.y)) {
+                if (button->state == BUTTON_STATE_NORMAL) {
+                    button->state = BUTTON_STATE_HOVER;
+                    view_invalidate((View*)button);
+                    serial_write_string("Button: Hover via event bus\n");
+                }
+            } else {
+                if (button->state == BUTTON_STATE_HOVER) {
+                    button->state = BUTTON_STATE_NORMAL;
+                    view_invalidate((View*)button);
+                }
+            }
+            return 0;  /* Don't consume move events */
+            
+        case EVENT_MOUSE_DOWN:
+            /* Press button only if mouse is over actual button */
+            if (button_contains_pixel(button, event->data.mouse.x, event->data.mouse.y)) {
+                button->state = BUTTON_STATE_PRESSED;
+                view_invalidate((View*)button);
+                serial_write_string("Button: Pressed via event bus\n");
+                return 1;  /* Consume the event */
+            }
+            return 0;
+            
+        case EVENT_MOUSE_UP:
+            /* Release button and fire callback if still over button */
+            if (button->state == BUTTON_STATE_PRESSED) {
+                if (button_contains_pixel(button, event->data.mouse.x, event->data.mouse.y)) {
+                    button->state = BUTTON_STATE_HOVER;
+                    
+                    /* Fire callback */
+                    if (button->on_click) {
+                        button->on_click(button, button->user_data);
+                    }
+                    
+                    serial_write_string("Button clicked via event bus: ");
+                    serial_write_string(button->label);
+                    serial_write_string("\n");
+                } else {
+                    /* Released outside button - cancel click */
+                    button->state = BUTTON_STATE_NORMAL;
+                }
+                view_invalidate((View*)button);
+                return 1;  /* Consume the event */
+            }
+            return 0;
+    }
+    
+    return 0;
+}
+
+/* Handle button events (legacy - kept for compatibility) */
 int button_handle_event(View *self, InputEvent *event) {
     Button *button = (Button*)self;
     
@@ -271,9 +334,25 @@ int button_handle_event(View *self, InputEvent *event) {
 
 static void button_interface_init(View *view, ViewContext *context) {
     Button *button = (Button*)view;
-    (void)context;  /* Unused for now */
     
     serial_write_string("Button: Interface init called\n");
+    
+    /* Store event bus reference if available */
+    if (context && context->event_bus) {
+        button->event_bus = context->event_bus;
+        
+        /* Subscribe to mouse events immediately (buttons always listen) */
+        event_bus_subscribe(button->event_bus, view, EVENT_MOUSE_MOVE,
+                          EVENT_PRIORITY_NORMAL, button_mouse_handler, button);
+        event_bus_subscribe(button->event_bus, view, EVENT_MOUSE_DOWN,
+                          EVENT_PRIORITY_NORMAL, button_mouse_handler, button);
+        event_bus_subscribe(button->event_bus, view, EVENT_MOUSE_UP,
+                          EVENT_PRIORITY_NORMAL, button_mouse_handler, button);
+        
+        serial_write_string("Button: Subscribed to event bus for mouse events\n");
+    } else {
+        button->event_bus = NULL;
+    }
     
     /* Initialize button state */
     button->state = BUTTON_STATE_NORMAL;
@@ -284,8 +363,13 @@ static void button_interface_destroy(View *view) {
     
     serial_write_string("Button: Interface destroy called\n");
     
-    /* Clean up if needed */
-    (void)button;
+    /* Unsubscribe from event bus */
+    if (button->event_bus) {
+        event_bus_unsubscribe(button->event_bus, view, EVENT_MOUSE_MOVE);
+        event_bus_unsubscribe(button->event_bus, view, EVENT_MOUSE_DOWN);
+        event_bus_unsubscribe(button->event_bus, view, EVENT_MOUSE_UP);
+        serial_write_string("Button: Unsubscribed from event bus\n");
+    }
 }
 
 static int button_interface_can_focus(View *view) {

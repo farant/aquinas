@@ -14,7 +14,10 @@ typedef enum {
 } EventPriority;
 
 /* Forward declarations */
+#ifndef EVENTBUS_TYPEDEF
+#define EVENTBUS_TYPEDEF
 typedef struct EventBus EventBus;
+#endif
 typedef struct EventSubscription EventSubscription;
 
 /* Event handler callback type

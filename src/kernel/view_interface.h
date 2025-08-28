@@ -4,8 +4,16 @@
 #include "view.h"
 
 /* Forward declarations */
+#ifndef LAYOUT_TYPEDEF
+#define LAYOUT_TYPEDEF
 typedef struct Layout Layout;
+#endif
+
+#ifndef EVENTBUS_TYPEDEF
+#define EVENTBUS_TYPEDEF
 typedef struct EventBus EventBus;
+#endif
+
 typedef struct ResourceManager ResourceManager;
 typedef struct ThemeManager ThemeManager;
 

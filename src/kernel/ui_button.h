@@ -44,6 +44,9 @@ struct Button {
     /* Pixel-precise bounds for accurate hit testing */
     int pixel_x, pixel_y;        /* Actual position in pixels */
     int pixel_width, pixel_height; /* Actual size in pixels */
+    
+    /* Event bus reference for subscription management */
+    struct EventBus *event_bus;   /* Pointer to event bus for subscribing */
 };
 
 /* Button API */
