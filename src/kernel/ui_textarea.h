@@ -22,6 +22,9 @@ typedef struct {
     View base;
     TextEditBase edit_base;  /* Shared text editing functionality */
     
+    /* Event bus reference for subscription management */
+    struct EventBus *event_bus;   /* Pointer to event bus for subscribing */
+    
     /* Pixel dimensions (position is handled by View) */
     int pixel_width, pixel_height;
     

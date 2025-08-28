@@ -8,6 +8,7 @@
 #include "dispi.h"
 #include "memory.h"
 #include "serial.h"
+#include "event_bus.h"
 
 /* Constants - use the PADDING values from ui_theme.h */
 #define TEXTAREA_PADDING 5
@@ -23,6 +24,8 @@ static void textarea_destroy(View *view);
 static void ensure_cursor_visible(TextArea *textarea);
 static int get_line_at_y(TextArea *textarea, int y);
 static int get_col_at_x(TextArea *textarea, int line_idx, int x);
+static int textarea_keyboard_handler(View *view, InputEvent *event, void *context);
+static int textarea_mouse_handler(View *view, InputEvent *event, void *context);
 
 /* Interface callback declarations */
 static void textarea_interface_init(View *view, ViewContext *context);
@@ -59,9 +62,16 @@ static ViewInterface textarea_interface = {
 
 static void textarea_interface_init(View *view, ViewContext *context) {
     TextArea *textarea = (TextArea*)view;
-    (void)context;  /* Unused for now */
     
     serial_write_string("TextArea: Interface init called\n");
+    
+    /* Store event bus reference if available */
+    if (context && context->event_bus) {
+        textarea->event_bus = context->event_bus;
+        serial_write_string("TextArea: Event bus stored for future subscription\n");
+    } else {
+        textarea->event_bus = NULL;
+    }
     
     /* Initialize shared text editing base */
     text_edit_base_init(&textarea->edit_base);
@@ -72,14 +82,31 @@ static void textarea_interface_destroy(View *view) {
     
     serial_write_string("TextArea: Interface destroy called\n");
     
-    /* Clean up if needed */
-    (void)textarea;
+    /* Unsubscribe from event bus if we have focus */
+    if (textarea->event_bus && textarea->edit_base.has_focus) {
+        event_bus_unsubscribe(textarea->event_bus, view, EVENT_KEY_DOWN);
+        event_bus_unsubscribe(textarea->event_bus, view, EVENT_MOUSE_DOWN);
+        serial_write_string("TextArea: Unsubscribed from event bus on destroy\n");
+    }
 }
 
 static void textarea_interface_on_focus_gained(View *view) {
     TextArea *textarea = (TextArea*)view;
     
     serial_write_string("TextArea: Got focus via interface!\n");
+    
+    /* Subscribe to event bus for keyboard and mouse events */
+    if (textarea->event_bus) {
+        /* Subscribe keyboard at NORMAL priority to allow system shortcuts first */
+        event_bus_subscribe(textarea->event_bus, view, EVENT_KEY_DOWN, 
+                          EVENT_PRIORITY_NORMAL, textarea_keyboard_handler, textarea);
+        
+        /* Subscribe mouse at NORMAL priority */
+        event_bus_subscribe(textarea->event_bus, view, EVENT_MOUSE_DOWN,
+                          EVENT_PRIORITY_NORMAL, textarea_mouse_handler, textarea);
+        
+        serial_write_string("TextArea: Subscribed to event bus for keyboard and mouse\n");
+    }
     
     /* Update focus state using shared base */
     text_edit_base_set_focus(&textarea->edit_base, view, 1);
@@ -92,6 +119,13 @@ static void textarea_interface_on_focus_lost(View *view) {
     TextArea *textarea = (TextArea*)view;
     
     serial_write_string("TextArea: Lost focus via interface!\n");
+    
+    /* Unsubscribe from event bus */
+    if (textarea->event_bus) {
+        event_bus_unsubscribe(textarea->event_bus, view, EVENT_KEY_DOWN);
+        event_bus_unsubscribe(textarea->event_bus, view, EVENT_MOUSE_DOWN);
+        serial_write_string("TextArea: Unsubscribed from event bus\n");
+    }
     
     /* Update focus state using shared base */
     text_edit_base_set_focus(&textarea->edit_base, view, 0);
@@ -265,7 +299,89 @@ static void textarea_draw(View *view, GraphicsContext *gc) {
     }
 }
 
-/* Handle events */
+/* Event bus handler for keyboard events */
+static int textarea_keyboard_handler(View *view, InputEvent *event, void *context) {
+    TextArea *textarea = (TextArea*)context;
+    
+    if (!textarea || !event || event->type != EVENT_KEY_DOWN) {
+        return 0;
+    }
+    
+    /* Only handle if we have focus */
+    if (!textarea->edit_base.has_focus) {
+        return 0;
+    }
+    
+    serial_write_string("TextArea: Handling keyboard event via event bus\n");
+    
+    /* Handle the key */
+    textarea_handle_key(textarea, event->data.keyboard.ascii);
+    
+    /* Reset typing timer to keep cursor solid */
+    text_edit_base_reset_typing_timer(&textarea->edit_base);
+    
+    view_invalidate((View*)textarea);
+    
+    return 1;  /* Event handled */
+}
+
+/* Event bus handler for mouse events */
+static int textarea_mouse_handler(View *view, InputEvent *event, void *context) {
+    TextArea *textarea = (TextArea*)context;
+    int line_idx, col_idx;
+    int local_x, local_y;
+    RegionRect abs_bounds;
+    int abs_x, abs_y;
+    
+    if (!textarea || !event) {
+        return 0;
+    }
+    
+    if (event->type == EVENT_MOUSE_DOWN) {
+        /* Check if click is within our bounds */
+        if (text_edit_base_hit_test((View*)textarea, event->data.mouse.x, event->data.mouse.y)) {
+            /* Focus if not already focused */
+            if (!textarea->edit_base.has_focus) {
+                text_edit_base_set_focus(&textarea->edit_base, (View*)textarea, 1);
+            }
+            
+            /* Get absolute position for cursor calculation */
+            view_get_absolute_bounds((View*)textarea, &abs_bounds);
+            grid_region_to_pixel(abs_bounds.x, abs_bounds.y, &abs_x, &abs_y);
+            
+            /* Calculate local coordinates relative to textarea content area */
+            local_x = event->data.mouse.x - abs_x;
+            local_y = event->data.mouse.y - abs_y;
+            
+            /* Calculate which line was clicked */
+            line_idx = get_line_at_y(textarea, local_y);
+            if (line_idx >= 0 && line_idx < textarea->line_count) {
+                textarea->cursor_line = line_idx;
+                
+                /* Calculate column within line */
+                col_idx = get_col_at_x(textarea, line_idx, local_x);
+                textarea->cursor_col = col_idx;
+            }
+            
+            /* Reset cursor blink using shared base */
+            text_edit_base_reset_typing_timer(&textarea->edit_base);
+            
+            serial_write_string("TextArea: Handling mouse click via event bus\n");
+            view_invalidate((View*)textarea);
+            return 1;
+        } else {
+            /* Click outside - lose focus */
+            if (textarea->edit_base.has_focus) {
+                text_edit_base_set_focus(&textarea->edit_base, (View*)textarea, 0);
+                view_invalidate((View*)textarea);
+            }
+        }
+    }
+    
+    return 0;
+}
+
+/* Handle events (legacy - kept for compatibility) */
 static int textarea_handle_event(View *view, InputEvent *event) {
     TextArea *textarea = (TextArea*)view;
     int line_idx, col_idx;

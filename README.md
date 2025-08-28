@@ -287,6 +287,158 @@ The system includes a complete UI component library built on top of the view sys
   - Click handling with callbacks
   - Event propagation through view hierarchy
 
+#### ViewInterface System
+
+The ViewInterface provides a formal contract for component lifecycle management:
+
+**Key Concepts:**
+- **Lifecycle Callbacks**: Components implement callbacks for initialization, destruction, and state changes
+- **ViewContext**: Passes important system references (Layout, EventBus) during initialization
+- **Focus Management**: Automatic callbacks when components gain or lose focus
+- **Capability Queries**: Components declare if they can receive focus or their preferred size
+
+**Interface Structure:**
+```c
+typedef struct ViewInterface {
+    /* Lifecycle - required */
+    void (*init)(View *view, ViewContext *context);
+    void (*destroy)(View *view);
+    
+    /* State changes - optional */
+    void (*on_focus_gained)(View *view);
+    void (*on_focus_lost)(View *view);
+    void (*on_visibility_changed)(View *view, int visible);
+    
+    /* Capabilities - required */
+    int (*can_focus)(View *view);
+    RegionRect (*get_preferred_size)(View *view);
+} ViewInterface;
+```
+
+**Implementation Example:**
+```c
+/* Define interface callbacks */
+static void mycomponent_init(View *view, ViewContext *context) {
+    MyComponent *comp = (MyComponent*)view;
+    /* Store event bus for later use */
+    if (context && context->event_bus) {
+        comp->event_bus = context->event_bus;
+    }
+}
+
+static void mycomponent_on_focus_gained(View *view) {
+    MyComponent *comp = (MyComponent*)view;
+    /* Subscribe to events when focused */
+    if (comp->event_bus) {
+        event_bus_subscribe(comp->event_bus, view, EVENT_KEY_DOWN,
+                          EVENT_PRIORITY_NORMAL, key_handler, comp);
+    }
+}
+
+/* Create static interface */
+static ViewInterface mycomponent_interface = {
+    mycomponent_init,
+    mycomponent_destroy,
+    mycomponent_on_focus_gained,
+    mycomponent_on_focus_lost,
+    NULL,  /* on_visibility_changed - optional */
+    mycomponent_can_focus,
+    mycomponent_get_preferred_size
+};
+
+/* Assign during component creation */
+component->base.interface = &mycomponent_interface;
+```
+
+#### EventBus System
+
+The EventBus provides decoupled event routing with priority-based dispatch:
+
+**Key Features:**
+- **Priority Levels**: Events processed in order (SYSTEM → CAPTURE → NORMAL → BUBBLE → DEFAULT)
+- **Subscription Management**: Components subscribe/unsubscribe dynamically
+- **Modal Capture**: Support for exclusive input (modal dialogs)
+- **Memory Pool**: Pre-allocated subscriptions avoid runtime allocation
+
+**Priority Levels:**
+```c
+typedef enum {
+    EVENT_PRIORITY_SYSTEM = 0,   /* System shortcuts (e.g., F1 help) */
+    EVENT_PRIORITY_CAPTURE = 1,  /* Modal dialogs */
+    EVENT_PRIORITY_NORMAL = 2,   /* Regular component handlers */
+    EVENT_PRIORITY_BUBBLE = 3,   /* Parent chain handlers */
+    EVENT_PRIORITY_DEFAULT = 4   /* Fallback handlers */
+} EventPriority;
+```
+
+**Using EventBus in Components:**
+
+1. **Store EventBus reference during init:**
+```c
+static void component_init(View *view, ViewContext *context) {
+    MyComponent *comp = (MyComponent*)view;
+    if (context && context->event_bus) {
+        comp->event_bus = context->event_bus;
+    }
+}
+```
+
+2. **Subscribe when appropriate (e.g., on focus):**
+```c
+static void component_on_focus_gained(View *view) {
+    MyComponent *comp = (MyComponent*)view;
+    if (comp->event_bus) {
+        /* Subscribe to keyboard events */
+        event_bus_subscribe(comp->event_bus, view, EVENT_KEY_DOWN,
+                          EVENT_PRIORITY_NORMAL, keyboard_handler, comp);
+        /* Subscribe to mouse events */
+        event_bus_subscribe(comp->event_bus, view, EVENT_MOUSE_DOWN,
+                          EVENT_PRIORITY_NORMAL, mouse_handler, comp);
+    }
+}
+```
+
+3. **Implement event handlers:**
+```c
+static int keyboard_handler(View *view, InputEvent *event, void *context) {
+    MyComponent *comp = (MyComponent*)context;
+    
+    if (event->type != EVENT_KEY_DOWN) return 0;
+    
+    /* Handle the event */
+    switch (event->data.keyboard.key) {
+        case 0x1C:  /* Enter key */
+            do_something(comp);
+            return 1;  /* Event handled */
+    }
+    
+    return 0;  /* Event not handled */
+}
+```
+
+4. **Unsubscribe when done:**
+```c
+static void component_on_focus_lost(View *view) {
+    MyComponent *comp = (MyComponent*)view;
+    if (comp->event_bus) {
+        event_bus_unsubscribe(comp->event_bus, view, EVENT_KEY_DOWN);
+        event_bus_unsubscribe(comp->event_bus, view, EVENT_MOUSE_DOWN);
+    }
+}
+```
+
+**Event Flow:**
+1. Event enters via `layout_handle_event()`
+2. EventBus dispatches by priority
+3. First handler to return 1 stops propagation
+4. System shortcuts always run first
+5. Modal capture bypasses normal routing
+
+**Component Migration Examples:**
+- **TextInput/TextArea**: Subscribe on focus, unsubscribe on blur
+- **Button**: Always subscribed for mouse events
+- **Panel/Label**: No subscription needed (passive components)
+
 ### View System and Layout Manager
 
 The editor includes a hierarchical view system and layout manager for building complex UI components:
