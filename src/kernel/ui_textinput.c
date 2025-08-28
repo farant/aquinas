@@ -168,8 +168,8 @@ void textinput_draw(View *self, GraphicsContext *gc) {
     } else if (input->state == TEXTINPUT_STATE_FOCUSED && input->text_length == 0) {
         /* Draw cursor at start when empty - use same style as draw_cursor */
         if (input->cursor_visible) {
-            /* Background highlight style for empty field */
-            gc_fill_rect(gc, text_x, text_y + 2, char_width, char_height, COLOR_MED_GOLD);
+            /* Background highlight style for empty field - use same positioning as draw_cursor */
+            gc_fill_rect(gc, text_x, y + PADDING_SMALL + 2, char_width, char_height, COLOR_MED_GOLD);
             
             /* Underscore style (uncomment to use this instead) */
             /*
