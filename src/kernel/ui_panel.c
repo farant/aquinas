@@ -1,10 +1,41 @@
 /* Panel Component Implementation */
 
 #include "ui_panel.h"
+#include "view_interface.h"
 #include "graphics_context.h"
 #include "grid.h"
 #include "dispi.h"
 #include "memory.h"
+#include "serial.h"
+
+/* Forward declarations for interface callbacks */
+static void panel_interface_init(View *view, ViewContext *context);
+static void panel_interface_destroy(View *view);
+static int panel_interface_can_focus(View *view);
+static RegionRect panel_interface_get_preferred_size(View *view);
+
+/* Panel ViewInterface definition */
+static ViewInterface panel_interface = {
+    /* Lifecycle methods */
+    panel_interface_init,
+    panel_interface_destroy,
+    
+    /* Parent-child callbacks */
+    NULL,  /* Use defaults - panels are containers */
+    NULL,
+    NULL,
+    NULL,
+    
+    /* State changes */
+    NULL,  /* Panels don't typically get focus */
+    NULL,
+    NULL,  /* Use default for visibility */
+    NULL,  /* Use default for enabled */
+    
+    /* Capabilities */
+    panel_interface_can_focus,
+    panel_interface_get_preferred_size
+};
 
 /* Draw 3D border effect */
 static void draw_3d_border(GraphicsContext *gc, int x, int y, int w, int h, BorderStyle style) {
@@ -106,6 +137,39 @@ void panel_draw(View *self, GraphicsContext *gc) {
     }
 }
 
+/* ViewInterface callback implementations */
+
+static void panel_interface_init(View *view, ViewContext *context) {
+    Panel *panel = (Panel*)view;
+    (void)context;  /* Unused for now */
+    
+    serial_write_string("Panel: Interface init called\n");
+    
+    /* Initialize panel defaults */
+    panel->bg_color = THEME_BG;
+    panel->border_style = BORDER_NONE;
+}
+
+static void panel_interface_destroy(View *view) {
+    Panel *panel = (Panel*)view;
+    
+    serial_write_string("Panel: Interface destroy called\n");
+    
+    /* Clean up if needed */
+    (void)panel;
+}
+
+static int panel_interface_can_focus(View *view) {
+    /* Panels don't receive focus, they're just containers */
+    (void)view;
+    return 0;
+}
+
+static RegionRect panel_interface_get_preferred_size(View *view) {
+    /* Return current bounds as preferred size */
+    return view->bounds;
+}
+
 /* Create a panel */
 Panel* panel_create(int x, int y, int width, int height) {
     Panel *panel;
@@ -135,6 +199,13 @@ Panel* panel_create(int x, int y, int width, int height) {
     panel->base.handle_event = NULL;  /* Events pass through to children */
     panel->base.destroy = NULL;
     panel->base.type_name = "Panel";
+    panel->base.interface = &panel_interface;  /* Set ViewInterface */
+    
+    /* Initialize the view through its interface */
+    if (panel->base.interface) {
+        ViewContext context = {NULL, NULL, NULL, NULL};
+        view_interface_init(&panel->base, panel->base.interface, &context);
+    }
     
     /* Initialize panel specific */
     panel->title = NULL;

@@ -1,10 +1,41 @@
 /* Label Component Implementation */
 
 #include "ui_label.h"
+#include "view_interface.h"
 #include "graphics_context.h"
 #include "grid.h"
 #include "dispi.h"
 #include "memory.h"
+#include "serial.h"
+
+/* Forward declarations for interface callbacks */
+static void label_interface_init(View *view, ViewContext *context);
+static void label_interface_destroy(View *view);
+static int label_interface_can_focus(View *view);
+static RegionRect label_interface_get_preferred_size(View *view);
+
+/* Label ViewInterface definition */
+static ViewInterface label_interface = {
+    /* Lifecycle methods */
+    label_interface_init,
+    label_interface_destroy,
+    
+    /* Parent-child callbacks */
+    NULL,  /* Use defaults */
+    NULL,
+    NULL,
+    NULL,
+    
+    /* State changes */
+    NULL,  /* Labels don't get focus */
+    NULL,
+    NULL,  /* Use default for visibility */
+    NULL,  /* Use default for enabled */
+    
+    /* Capabilities */
+    label_interface_can_focus,
+    label_interface_get_preferred_size
+};
 
 /* Draw label */
 void label_draw(View *self, GraphicsContext *gc) {
@@ -91,6 +122,38 @@ void label_draw(View *self, GraphicsContext *gc) {
     }
 }
 
+/* ViewInterface callback implementations */
+
+static void label_interface_init(View *view, ViewContext *context) {
+    Label *label = (Label*)view;
+    (void)context;  /* Unused for now */
+    
+    serial_write_string("Label: Interface init called\n");
+    
+    /* Labels are simple, not much to initialize */
+    (void)label;
+}
+
+static void label_interface_destroy(View *view) {
+    Label *label = (Label*)view;
+    
+    serial_write_string("Label: Interface destroy called\n");
+    
+    /* Clean up if needed */
+    (void)label;
+}
+
+static int label_interface_can_focus(View *view) {
+    /* Labels cannot receive focus */
+    (void)view;
+    return 0;
+}
+
+static RegionRect label_interface_get_preferred_size(View *view) {
+    /* Return current bounds as preferred size */
+    return view->bounds;
+}
+
 /* Create a label */
 Label* label_create(int x, int y, int width, const char *text, FontSize font) {
     Label *label;
@@ -124,6 +187,13 @@ Label* label_create(int x, int y, int width, const char *text, FontSize font) {
     label->base.handle_event = NULL;  /* Labels don't handle events */
     label->base.destroy = NULL;
     label->base.type_name = "Label";
+    label->base.interface = &label_interface;  /* Set ViewInterface */
+    
+    /* Initialize the view through its interface */
+    if (label->base.interface) {
+        ViewContext context = {NULL, NULL, NULL, NULL};
+        view_interface_init(&label->base, label->base.interface, &context);
+    }
     
     /* Initialize label specific */
     label->text = text;

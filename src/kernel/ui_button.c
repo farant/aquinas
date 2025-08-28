@@ -1,11 +1,41 @@
 /* Button Component Implementation */
 
 #include "ui_button.h"
+#include "view_interface.h"
 #include "graphics_context.h"
 #include "grid.h"
 #include "dispi.h"
 #include "memory.h"
 #include "serial.h"
+
+/* Forward declarations for interface callbacks */
+static void button_interface_init(View *view, ViewContext *context);
+static void button_interface_destroy(View *view);
+static int button_interface_can_focus(View *view);
+static RegionRect button_interface_get_preferred_size(View *view);
+
+/* Button ViewInterface definition */
+static ViewInterface button_interface = {
+    /* Lifecycle methods */
+    button_interface_init,
+    button_interface_destroy,
+    
+    /* Parent-child callbacks */
+    NULL,  /* Use defaults */
+    NULL,
+    NULL,
+    NULL,
+    
+    /* State changes */
+    NULL,  /* Buttons don't need special focus handling */
+    NULL,
+    NULL,  /* Use default for visibility */
+    NULL,  /* Use default for enabled */
+    
+    /* Capabilities */
+    button_interface_can_focus,
+    button_interface_get_preferred_size
+};
 
 /* Calculate button width based on label */
 static int calculate_button_width(const char *label, FontSize font) {
@@ -237,6 +267,39 @@ int button_handle_event(View *self, InputEvent *event) {
     return 0;  /* Event not handled */
 }
 
+/* ViewInterface callback implementations */
+
+static void button_interface_init(View *view, ViewContext *context) {
+    Button *button = (Button*)view;
+    (void)context;  /* Unused for now */
+    
+    serial_write_string("Button: Interface init called\n");
+    
+    /* Initialize button state */
+    button->state = BUTTON_STATE_NORMAL;
+}
+
+static void button_interface_destroy(View *view) {
+    Button *button = (Button*)view;
+    
+    serial_write_string("Button: Interface destroy called\n");
+    
+    /* Clean up if needed */
+    (void)button;
+}
+
+static int button_interface_can_focus(View *view) {
+    Button *button = (Button*)view;
+    
+    /* Button can focus if not disabled */
+    return button->state != BUTTON_STATE_DISABLED;
+}
+
+static RegionRect button_interface_get_preferred_size(View *view) {
+    /* Return current bounds as preferred size */
+    return view->bounds;
+}
+
 /* Create a button */
 Button* button_create(int x, int y, const char *label, FontSize font) {
     Button *button;
@@ -277,6 +340,13 @@ Button* button_create(int x, int y, const char *label, FontSize font) {
     button->base.handle_event = button_handle_event;
     button->base.destroy = NULL;
     button->base.type_name = "Button";
+    button->base.interface = &button_interface;  /* Set ViewInterface */
+    
+    /* Initialize the view through its interface */
+    if (button->base.interface) {
+        ViewContext context = {NULL, NULL, NULL, NULL};
+        view_interface_init(&button->base, button->base.interface, &context);
+    }
     
     /* Initialize button specific */
     button->label = label;
